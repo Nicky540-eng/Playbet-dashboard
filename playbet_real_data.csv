@@ -1,0 +1,202 @@
+user_id,name,city,currency,registration_date,report_date,last_login_date,last_login_hour,status,device_type,platform,game_category,balance,balance_category,total_bets,total_wagered,avg_stake,revenue,bonus_type,bonus_wagered_pct,promo_roi_pct,is_duplicate
+467297,Tendani Brenda Takalani,Centurion,ZAR,2009-03-21,2026-04-01,2019-11-25,10,churned,mobile,app,Aviator,0.82,Very Low (<1),191,2526.26,162.11,0.16,,50.53,,False
+468371,KALEB WERETAW,Bedford Gardens,ZAR,2009-03-21,2026-04-01,2025-03-26,18,churned,desktop,app,Evolution,854.17,High (>100),45,4132.29,119.14,267.75,,82.65,,True
+468493,Marco Bortolussi,Tongaat,ZAR,2009-03-21,2026-04-01,2020-03-26,5,churned,desktop,web,GamingHUB,8.22,Low (1-10),197,1600.25,174.31,1976.57,,32.0,,False
+468551,Daniele Marinelli,Ballito,ZAR,2009-03-21,2026-04-01,2024-01-01,12,active,mobile,web,Evolution,17.99,Medium (10-100),75,4477.62,45.14,1230.17,,89.55,,False
+469834,Paris Pontsho  Ndou,Soshanguve,ZAR,2009-03-21,2026-04-01,2024-01-01,9,active,mobile,app,BetGames,0.0,Zero,191,1946.01,26.82,429.08,,38.92,,False
+473620,Leven Naicker,Johannesburg,ZAR,2009-03-21,2026-04-01,2021-05-25,1,churned,mobile,app,Pragmatic Games,2.8,Low (1-10),36,54.19,57.6,906.09,reload_bonus,1.08,150.98,False
+480051,Phindani Moyo,Johannesburg,ZAR,2009-03-21,2026-04-01,2029-03-26,18,active,mobile,web,Aviator,0.0,Zero,13,4526.91,16.13,133.41,,90.54,,False
+484974,Phutiana Elias Maponya,Johannesburg,ZAR,2009-03-21,2026-04-01,2028-03-26,7,active,desktop,app,Aviator,0.15,Very Low (<1),196,456.43,108.58,0.03,,9.13,,False
+489064,Masego Molema,Kuruman,ZAR,2009-03-21,2026-04-01,2024-01-01,9,active,mobile,app,Aviator,164.54,High (>100),159,1596.57,187.64,32.91,reload_bonus,31.93,546.9,False
+490871,Percy fezile Jacques Ngwenya,Johannesburg,ZAR,2009-03-21,2026-04-01,2017-12-25,8,churned,desktop,app,Aviator,1.25,Low (1-10),22,4750.31,12.67,0.25,,95.01,,False
+530778,Simon Leshomo,Potchefstroom,ZAR,2010-03-21,2026-04-01,2019-09-25,22,churned,mobile,web,Aviator,0.82,Very Low (<1),69,4753.04,28.81,0.16,,95.06,,False
+530982,Frank Alor,Johannesburg,ZAR,2010-03-21,2026-04-01,2024-01-01,10,active,desktop,web,Aviator,97.3,Medium (10-100),126,2867.19,93.18,19.46,,57.34,,False
+531323,Oreen Ngoma,Johannesburg,ZAR,2010-03-21,2026-04-01,2027-03-26,17,active,desktop,app,Aviator,0.96,Very Low (<1),105,3159.19,187.11,0.19,,63.18,,False
+531499,Chrispen Mukwena,Johannesburg,ZAR,2010-03-21,2026-04-01,2029-03-26,17,active,mobile,web,Aviator,0.19,Very Low (<1),37,2242.23,66.65,0.04,,44.84,,False
+531562,Leopold Musiyazviriyo,Johannesburg,ZAR,2010-03-21,2026-04-01,2026-03-26,18,active,mobile,app,BetGames,0.0,Zero,79,1466.05,103.91,183.87,reload_bonus,29.32,227.59,False
+532195,Gift Ndlovu,Johannesburg,ZAR,2010-03-21,2026-04-01,2024-01-01,18,active,mobile,app,Pragmatic Games,0.0,Zero,158,1643.32,13.11,101.8,reload_bonus,32.87,415.97,False
+535103,MKHANCANI RODGERS MLAMBO,Johannesburg,ZAR,2010-03-21,2026-04-01,2024-01-01,10,active,mobile,web,Aviator,0.35,Very Low (<1),128,3362.59,33.93,0.07,,67.25,,False
+535496,Nozipho Mazibane,Witbank,ZAR,2010-03-21,2026-04-01,2029-03-26,22,active,mobile,web,Aviator,0.72,Very Low (<1),60,3761.87,197.39,0.14,reload_bonus,75.24,148.77,True
+557778,Florence Ncube,Johannesburg,ZAR,2015-06-15,2026-04-01,2024-01-01,12,active,mobile,web,Aviator,0.25,Very Low (<1),133,3957.9,193.2,0.05,reload_bonus,79.16,164.17,False
+569387,Kopano Mosounyane,Pretoria,ZAR,2016-04-21,2026-04-01,2029-03-26,9,active,mobile,web,Aviator,0.17,Very Low (<1),83,3948.09,5.96,0.03,,78.96,,False
+606945,Maetla Maetle,Pretoria,ZAR,2011-05-21,2026-04-01,2028-03-26,18,active,mobile,web,GamingHUB,0.0,Zero,119,456.03,190.6,1613.18,,9.12,,False
+613681,Memory Hadebe,Johannesburg,ZAR,2019-05-21,2026-04-01,2028-03-26,11,active,mobile,app,Aviator,0.03,Very Low (<1),69,2472.1,129.63,0.01,,49.44,,False
+630150,Andile Mthethwa,Durban,ZAR,2007-09-23,2026-04-01,2028-03-26,13,active,mobile,app,Aviator,0.09,Very Low (<1),133,287.79,174.24,0.02,reload_bonus,5.76,312.53,False
+678696,Maduka Francis,Johannesburg,ZAR,2027-07-21,2026-04-01,2024-01-01,17,active,mobile,app,Aviator,628.28,High (>100),69,2747.64,93.67,125.66,welcome_bonus,54.95,325.22,True
+678723,Anyanwu Charles,Johannesburg,ZAR,2027-07-21,2026-04-01,2024-01-01,15,active,mobile,app,Evolution,150.56,High (>100),167,2207.65,105.54,2116.47,,44.15,,False
+688311,FABALANDILE BATHABILE NCUBE,Johannesburg,ZAR,2008-08-21,2026-04-01,2023-03-26,11,churned,desktop,web,BetGames,0.0,Zero,52,4438.52,100.33,1080.81,,88.77,,False
+699872,Matimba Machavane,Pretoria,ZAR,2021-08-21,2026-04-01,2025-03-26,16,churned,mobile,app,Aviator,0.66,Very Low (<1),122,1754.58,135.04,0.13,reload_bonus,35.09,156.25,False
+764309,Nikhil Naidoo,Johannesburg,ZAR,2013-10-21,2026-04-01,2024-01-01,22,active,mobile,web,Aviator,2.39,Low (1-10),77,585.34,32.23,0.48,,11.71,,False
+799362,Anuma Eluu,Potcherfstroom,ZAR,2015-11-21,2026-04-01,2024-01-01,14,active,mobile,web,Aviator,1.36,Low (1-10),43,714.96,10.84,0.27,reload_bonus,14.3,-80,False
+868176,Amber Roux,Johannesburg,ZAR,2011-02-22,2026-04-01,2020-03-26,11,churned,mobile,web,BetGames,0.06,Very Low (<1),53,3807.55,65.05,936.72,reload_bonus,76.15,146.53,False
+920713,Ntsako Ronald Maimela,Elim,ZAR,2021-05-22,2026-04-01,2020-09-25,22,churned,mobile,app,Aviator,0.51,Very Low (<1),89,3091.09,142.41,0.1,,61.82,,False
+1010644,Jaryd Govender,Johannesburg,ZAR,2013-06-23,2026-04-01,2024-01-01,13,active,mobile,web,Sportsbook,0.0,Zero,135,505.61,44.36,943.7,,10.11,,False
+1028892,Ethan Bramwell,Cape Town,ZAR,2021-03-22,2026-04-01,2024-01-01,16,active,mobile,app,Aviator,2250.64,High (>100),37,420.53,136.32,450.13,,8.41,,False
+1095448,Cameron Montague Smith,Durban,ZAR,2028-04-22,2026-04-01,2012-02-26,16,churned,desktop,app,Aviator,0.56,Very Low (<1),133,3504.85,194.13,434.08,,70.1,,True
+1186645,Nicole Ellen Naude,Johannesburg,ZAR,2024-06-22,2026-04-01,2029-03-26,15,active,desktop,web,Aviator,1.13,Low (1-10),63,363.82,23.31,0.23,,7.28,,False
+1210023,Dhiresh Ram,Unit 39 Bryan Brook,ZAR,2021-09-22,2026-04-01,2028-02-26,14,active,desktop,app,Aviator,5.84,Low (1-10),162,4109.3,136.16,1.17,,82.19,,False
+1263688,Simbarashe Mucheka,Sandton,ZAR,2008-09-22,2026-04-01,2026-03-26,10,active,mobile,app,Aviator,0.05,Very Low (<1),95,3531.21,91.53,566.13,reload_bonus,70.62,299.97,False
+1339628,Brian July Mnisi,White River,ZAR,2009-11-22,2026-04-01,2024-01-01,9,active,mobile,web,Aviator,71.72,Medium (10-100),159,406.74,174.29,14.34,,8.13,,True
+1397885,Bhekinkosi LENMORE GUMBI,Germiston,ZAR,2013-12-22,2026-04-01,2028-02-26,20,active,desktop,app,Aviator,0.09,Very Low (<1),137,424.19,39.54,0.02,reload_bonus,8.48,180.83,False
+1455264,Lwandile Mgedezi,Johannesburg,ZAR,2021-01-23,2026-04-01,2024-03-26,11,churned,mobile,web,Aviator,9.1,Low (1-10),23,4933.2,140.06,1.82,,98.66,,False
+1537213,Giann Ludike,Empangeni,ZAR,2020-03-23,2026-04-01,2029-03-26,9,active,mobile,web,Evolution,0.0,Zero,63,1871.35,168.43,1865.21,reload_bonus,37.43,258.72,False
+1863556,Mustapha Saib,Johannesburg,ZAR,2025-05-23,2026-04-01,2022-03-26,20,churned,mobile,web,GamingHUB,0.65,Very Low (<1),147,1853.21,189.2,760.3,,37.06,,False
+1926140,Monique Elize Africa,Johannesburg,ZAR,2017-06-23,2026-04-01,2027-03-26,23,active,mobile,app,Aviator,0.3,Very Low (<1),116,4064.0,138.23,2828.24,reload_bonus,81.28,225.29,False
+2042011,Ann Caroline Stols,Roodepoort,ZAR,2006-07-23,2026-04-01,2027-03-26,12,active,desktop,app,Pragmatic Games,0.13,Very Low (<1),42,4736.24,101.95,471.32,,94.72,,False
+2154019,Johny Herman Saaiman,Queensburgh,ZAR,2025-08-23,2026-04-01,2029-03-26,13,active,mobile,web,Aviator,0.02,Very Low (<1),151,4930.01,125.48,0.0,,98.6,,False
+2229799,Matthew Ross Eggett,Johannesburg,ZAR,2027-08-23,2026-04-01,2014-03-26,18,churned,desktop,app,Aviator,2.89,Low (1-10),5,3766.89,174.44,2963.0,,75.34,,False
+2258051,Tsepo Khanye,Johannusburg,ZAR,2020-12-23,2026-04-01,2006-11-25,9,churned,mobile,web,Pragmatic Games,0.01,Very Low (<1),91,1881.3,116.27,647.65,reload_bonus,37.63,-80,False
+2312341,Peter Mamadi  Rakgoale,Polokwane,ZAR,2026-09-23,2026-04-01,2021-03-26,1,churned,mobile,web,Aviator,0.08,Very Low (<1),190,417.5,10.93,0.02,,8.35,,False
+2498152,Marcel Piek,Heidelberg,ZAR,2003-11-23,2026-04-01,2029-03-26,18,active,mobile,web,Aviator,0.06,Very Low (<1),192,3885.73,186.53,1303.61,reload_bonus,77.71,335.51,False
+2874162,Gabriela Yanakieva,Boksburg,ZAR,2028-01-24,2026-04-01,2024-01-01,21,active,mobile,app,Pragmatic Games,0.03,Very Low (<1),107,2792.02,139.46,382.25,,55.84,,False
+2875825,Melese Somna,Johannesburg,ZAR,2015-06-15,2026-04-01,2024-01-01,12,active,desktop,app,Evolution,1.41,Low (1-10),153,2121.11,136.92,442.18,reload_bonus,42.42,72.19,False
+2905976,Stephen Craig Bouwer,Paarl,ZAR,2020-02-24,2026-04-01,2028-02-26,20,active,desktop,web,Pragmatic Games,0.2,Very Low (<1),26,4531.77,47.06,622.91,reload_bonus,90.64,86.32,False
+2909609,Martyn V Britz,Johannesburg,ZAR,2023-02-24,2026-04-01,2015-03-26,15,churned,desktop,app,Aviator,3.84,Low (1-10),7,555.99,133.48,0.77,reload_bonus,11.12,282.97,True
+2931195,Phuti Mehala,Johannesburg,ZAR,2008-03-24,2026-04-01,2001-10-25,6,churned,desktop,app,GamingHUB,0.0,Zero,113,2463.13,81.8,694.5,,49.26,,False
+2943925,TRAVIS ANTONIO BASE,Capetown,ZAR,2015-03-24,2026-04-01,2024-01-01,12,active,mobile,web,Aviator,0.85,Very Low (<1),27,56.77,131.99,1319.86,,1.14,,False
+3264282,Mabulanyane Nemia MAGOLEGO,Steelpoort,ZAR,2015-06-15,2026-04-01,2024-01-01,17,active,desktop,web,Aviator,159.4,High (>100),113,2343.3,25.79,31.88,reload_bonus,46.87,44.91,False
+3273190,Samantha Bouwer,Paarl,ZAR,2005-04-24,2026-04-01,2007-03-26,13,churned,mobile,web,Aviator,1.44,Low (1-10),122,281.52,133.28,0.29,,5.63,,False
+3290617,Donald Kabelo Makhura,Akasia,ZAR,2016-04-24,2026-04-01,2027-03-26,17,active,mobile,web,Aviator,0.0,Zero,32,594.09,199.89,906.04,,11.88,,False
+3316703,Amanda Amalie Rheeders,Brits,ZAR,2028-04-24,2026-04-01,2010-01-26,22,churned,mobile,app,Aviator,4.0,Low (1-10),26,587.63,14.4,0.8,,11.75,,False
+3340635,Saikot Das,Kempton Park,ZAR,2009-05-24,2026-04-01,2029-03-26,7,active,mobile,web,Aviator,0.26,Very Low (<1),6,3246.05,195.55,0.05,,64.92,,False
+3383980,ZACKAREE QUINTIN CLARGES,Boksburg,ZAR,2029-05-24,2026-04-01,2024-03-26,10,churned,mobile,web,Aviator,0.07,Very Low (<1),54,3730.22,84.35,0.01,,74.6,,False
+3386875,Alcino Broadley,Cape Town,ZAR,2015-06-15,2026-04-01,2027-11-25,8,active,mobile,app,Pragmatic Games,0.0,Zero,27,2916.84,174.8,2110.37,,58.34,,False
+3402134,Liam Smith,Brackendowns,ZAR,2006-06-24,2026-04-01,2013-05-25,9,churned,desktop,app,Aviator,2.25,Low (1-10),66,4810.86,157.57,0.45,reload_bonus,96.22,223.72,False
+3427554,Daphney Kau,Pretoria,ZAR,2015-06-24,2026-04-01,2029-03-26,17,active,mobile,web,Aviator,0.59,Very Low (<1),81,1874.35,115.57,0.12,reload_bonus,37.49,22.56,False
+3444695,Thomas Chris Walmsley,Johannesburg,ZAR,2021-06-24,2026-04-01,2015-09-25,15,churned,mobile,web,Aviator,0.41,Very Low (<1),54,1428.56,149.0,0.08,,28.57,,False
+3449977,Willem Ludick,Johannesburg,ZAR,2023-06-24,2026-04-01,2024-01-01,8,active,mobile,web,Evolution,0.0,Zero,34,4343.0,176.31,410.37,,86.86,,True
+3468444,Jerome Cassidy Izaaks,Cape Town,ZAR,2002-07-24,2026-04-01,2019-03-26,15,churned,mobile,web,Sportsbook,0.12,Very Low (<1),42,1117.98,83.81,1156.23,,22.36,,False
+3468869,Gopal Das,Pretoria,ZAR,2002-07-24,2026-04-01,2020-03-26,18,churned,desktop,app,Aviator,0.08,Very Low (<1),192,4816.11,68.77,0.02,reload_bonus,96.32,142.85,False
+3470180,Thanyalak Mano,Johannesburg,ZAR,2003-07-24,2026-04-01,2024-01-01,17,active,mobile,app,Aviator,0.07,Very Low (<1),71,60.77,135.18,0.01,,1.22,,True
+3470225,LUZIA NGEVE OGOKE,Mahikeng,ZAR,2003-07-24,2026-04-01,2029-03-26,23,active,desktop,web,Aviator,0.25,Very Low (<1),186,4849.39,162.53,0.05,,96.99,,False
+3471731,Aarika Bahadur,Northwold,ZAR,2004-07-24,2026-04-01,2029-03-26,22,active,desktop,web,Pragmatic Games,15.94,Medium (10-100),84,215.8,153.65,3922.89,reload_bonus,4.32,109.37,False
+3493203,Vishal Mohangi,Durban,ZAR,2012-07-24,2026-04-01,2023-03-26,12,churned,mobile,web,Sportsbook,0.1,Very Low (<1),49,4455.72,160.57,798.33,reload_bonus,89.11,93.45,False
+3496988,Elizabeth Gagnepain,Richards Bay,ZAR,2014-07-24,2026-04-01,2019-03-26,2,churned,mobile,web,BetGames,0.0,Zero,147,2638.51,89.94,1921.07,,52.77,,False
+3517284,Alonzo Broadley,Cape Town,ZAR,2022-07-24,2026-04-01,2024-01-01,20,active,desktop,app,Aviator,0.0,Zero,178,4964.82,164.48,1033.56,,99.3,,False
+3629008,Bhekanani Xolani Kheswa,Pimville,ZAR,2015-06-15,2026-04-01,2009-02-26,15,churned,desktop,app,Aviator,0.63,Very Low (<1),169,368.98,28.44,0.13,reload_bonus,7.38,29.64,False
+3653810,Baden Hoskin,Cape Town,ZAR,2008-09-24,2026-04-01,2014-01-26,0,churned,desktop,web,Aviator,0.1,Very Low (<1),53,2769.27,111.18,0.02,reload_bonus,55.39,168.48,False
+3666499,Christiaan Els,Johannesburg,ZAR,2012-09-24,2026-04-01,2024-01-01,11,active,desktop,web,Aviator,0.1,Very Low (<1),27,4846.51,6.12,0.02,reload_bonus,96.93,198.44,True
+3755894,Thabisho Malatji,Phalaborwa,ZAR,2011-10-24,2026-04-01,2020-09-25,20,churned,mobile,web,Aviator,12.02,Medium (10-100),162,2615.49,68.29,2.4,,52.31,,False
+3824994,Fabian Quirin Teichgreeber,Cape Town,ZAR,2003-11-24,2026-04-01,2027-03-26,20,active,mobile,web,GamingHUB,2866.16,High (>100),33,3146.99,76.46,499.29,reload_bonus,62.94,343.27,True
+4267579,Debra Piggott,Rodepoort,ZAR,2012-11-24,2026-04-01,2026-03-26,9,active,mobile,web,Evolution,0.35,Very Low (<1),87,3478.74,82.25,568.11,reload_bonus,69.57,73.31,False
+4320175,Vanessa Aitken,Johannesburg,ZAR,2028-11-24,2026-04-01,2029-03-26,12,active,desktop,app,Aviator,1.17,Low (1-10),11,2272.71,140.62,0.23,,45.45,,False
+4335508,Saajida Ayob,Johannesburg,ZAR,2004-12-24,2026-04-01,2011-12-25,14,churned,mobile,app,Sportsbook,0.16,Very Low (<1),60,3137.79,80.77,193.63,reload_bonus,62.76,186.09,False
+4347782,Bastian Nils Teichgreeber,Kommetjie,ZAR,2009-12-24,2026-04-01,2027-03-26,20,active,mobile,app,Evolution,5838.85,High (>100),81,2921.57,92.5,82.94,,58.43,,False
+4428014,Thomas Walmsley,Johannesburg,ZAR,2011-01-25,2026-04-01,2014-12-25,19,churned,mobile,web,Aviator,1.27,Low (1-10),108,4505.79,51.32,0.25,reload_bonus,90.12,573.92,False
+4450335,Andrew Soekoe,Johannesburg,ZAR,2021-01-25,2026-04-01,2021-12-25,11,churned,mobile,app,Pragmatic Games,436.24,High (>100),90,227.23,77.78,249.9,reload_bonus,4.54,247.13,False
+4453637,Nikki Mathebula,Centurion,ZAR,2023-01-25,2026-04-01,2027-03-26,11,active,mobile,app,Aviator,18.81,Medium (10-100),134,1404.82,49.32,3.76,reload_bonus,28.1,263.49,False
+4455909,Wayne Pieterse,Kempton Park,ZAR,2024-01-25,2026-04-01,2029-03-26,19,active,desktop,app,Aviator,0.01,Very Low (<1),15,4752.06,19.27,0.0,,95.04,,False
+4467294,Courtleigh Phulafudi,Tasbet Park,ZAR,2029-01-25,2026-04-01,2029-03-26,22,active,mobile,app,Aviator,0.58,Very Low (<1),118,4451.32,122.67,0.12,,89.03,,False
+4475612,Bernad Malesa,Cape Town,ZAR,2003-02-25,2026-04-01,2009-03-26,16,churned,desktop,web,Aviator,0.68,Very Low (<1),171,2278.28,135.3,1711.43,,45.57,,False
+4484557,Mpho Vilakazi,Soweto,ZAR,2007-02-25,2026-04-01,2024-01-01,22,active,mobile,app,Aviator,0.29,Very Low (<1),69,3100.66,125.8,0.06,,62.01,,True
+4575554,Privesh Bisram,Pietermaritzburg,ZAR,2016-03-25,2026-04-01,2015-10-25,20,churned,mobile,app,Aviator,0.82,Very Low (<1),127,1386.91,95.38,0.16,,27.74,,False
+4608805,Phindile Guga,Durban,ZAR,2028-03-25,2026-04-01,2006-12-25,18,churned,desktop,web,Aviator,0.11,Very Low (<1),143,940.61,79.06,0.02,welcome_bonus,18.81,254.6,False
+4619883,Fabian Abrahams,Cape Town,ZAR,2001-04-25,2026-04-01,2024-01-01,15,active,desktop,app,Aviator,0.22,Very Low (<1),162,2318.49,173.35,1284.21,reload_bonus,46.37,-80,False
+4624470,Boitumelo Radiokana,Rustenburg,ZAR,2002-04-25,2026-04-01,2025-03-26,23,churned,mobile,app,Pragmatic Games,0.01,Very Low (<1),94,1766.76,106.22,943.65,,35.34,,False
+4626171,Delsia Mahanyele,Polokwane,ZAR,2003-04-25,2026-04-01,2001-05-25,19,churned,desktop,app,Aviator,1.21,Low (1-10),60,2918.28,98.44,0.24,reload_bonus,58.37,132.7,True
+4629402,Daniel Anthony,Roodepoort,ZAR,2004-04-25,2026-04-01,2018-05-25,10,churned,mobile,web,Aviator,0.5,Very Low (<1),94,388.67,10.0,0.1,reload_bonus,7.77,-80,False
+4639656,Robyn Thomas,Johannesburg,ZAR,2007-04-25,2026-04-01,2022-02-26,14,churned,mobile,app,Pragmatic Games,0.65,Very Low (<1),38,4871.97,71.54,1085.23,reload_bonus,97.44,331.64,False
+4653280,JOHANNES J GERBER,Germiston,ZAR,2011-04-25,2026-04-01,2025-03-26,13,churned,mobile,web,Aviator,0.09,Very Low (<1),16,4931.05,79.14,299.65,reload_bonus,98.62,482.65,True
+4661318,Maranne Havenga,Postmasburg,ZAR,2014-04-25,2026-04-01,2002-02-26,15,churned,mobile,app,Pragmatic Games,0.0,Zero,184,3490.81,82.77,331.35,reload_bonus,69.82,81.42,True
+4674676,Marco Rodrigues,Alberton,ZAR,2019-04-25,2026-04-01,2024-01-01,19,active,mobile,app,Evolution,0.08,Very Low (<1),88,2680.48,118.13,875.29,,53.61,,False
+4676360,Daniel Borges,Durban,ZAR,2019-04-25,2026-04-01,2010-07-25,23,churned,mobile,app,Aviator,10.75,Medium (10-100),183,1547.64,109.05,2.15,,30.95,,False
+4693842,Lutendo Rashango,Pretoria,ZAR,2025-04-25,2026-04-01,2020-08-25,15,churned,mobile,app,Sportsbook,0.0,Zero,146,4068.98,123.54,183.48,,81.38,,False
+4731062,Zanele Nzama,Pinetown,ZAR,2008-05-25,2026-04-01,2027-03-26,22,active,mobile,web,GamingHUB,0.0,Zero,177,3423.66,154.15,761.85,,68.47,,False
+4736265,Ritesh Mothiram,Randburg,ZAR,2011-05-25,2026-04-01,2027-03-26,15,active,mobile,web,Aviator,0.08,Very Low (<1),64,813.08,163.53,0.02,reload_bonus,16.26,494.03,False
+4738959,Michael Daly,Johannesburg,ZAR,2012-05-25,2026-04-01,2019-12-25,21,churned,desktop,web,GamingHUB,0.0,Zero,58,4554.64,145.03,402.96,reload_bonus,91.09,-25.29,False
+4744948,Godfrey Maphosa,Springs,ZAR,2015-05-25,2026-04-01,2022-07-25,16,churned,mobile,app,Aviator,0.1,Very Low (<1),165,4112.69,191.33,781.12,,82.25,,True
+4781071,GIDEON REYNEKE,Lichtenburg,ZAR,2029-05-25,2026-04-01,2026-11-25,19,active,mobile,app,GamingHUB,10.7,Medium (10-100),138,4749.0,8.56,142.13,,94.98,,False
+4843436,IRENE MORATI,Pretoria,ZAR,2016-06-25,2026-04-01,2020-06-25,12,churned,desktop,web,Pragmatic Games,104.1,High (>100),159,3628.6,43.18,28.77,reload_bonus,72.57,-37.95,True
+4875557,BASETSANA BERTHA SOKANA,Kempton Park,ZAR,2024-06-25,2026-04-01,2024-01-01,14,active,mobile,app,Aviator,0.0,Zero,113,3067.08,6.47,8.19,,61.34,,False
+4891135,Mohammad Ahmed,Piet Reatief,ZAR,2029-06-25,2026-04-01,2009-07-25,9,churned,mobile,app,Pragmatic Games,0.71,Very Low (<1),188,2091.22,131.26,740.41,,41.82,,True
+4896922,TAISHAL BRENWIN BAILEY,Cape Town,ZAR,2001-07-25,2026-04-01,2020-08-25,16,churned,mobile,app,Evolution,0.13,Very Low (<1),126,4663.64,180.12,1768.09,,93.27,,False
+4899139,Nompumelelo Ntuli,Durban,ZAR,2002-07-25,2026-04-01,2007-10-25,15,churned,mobile,app,Aviator,0.9,Very Low (<1),46,4330.32,52.48,0.18,,86.61,,False
+4899926,Kara Ellis,Cape Town,ZAR,2002-07-25,2026-04-01,2018-08-25,12,churned,desktop,web,Aviator,0.0,Zero,159,226.09,185.77,1468.53,reload_bonus,4.52,276.09,True
+4899928,Sebastian Le Grange,Cape Town,ZAR,2002-07-25,2026-04-01,2013-07-25,14,churned,desktop,web,Pragmatic Games,0.0,Zero,93,131.83,16.75,124.74,,2.64,,True
+4914639,GRACE BUYILE MGWENYA,Randfontein,ZAR,2007-07-25,2026-04-01,2029-03-26,19,active,mobile,web,Aviator,0.36,Very Low (<1),147,1882.32,187.22,0.07,,37.65,,False
+4921395,Jason Lovett,Ballito,ZAR,2009-07-25,2026-04-01,2012-07-25,18,churned,desktop,app,Pragmatic Games,1.0,Very Low (<1),50,4052.77,73.57,475.95,reload_bonus,81.06,29.72,False
+4923554,Clinton Hodson,Cape Town,ZAR,2010-07-25,2026-04-01,2023-03-26,6,churned,desktop,app,GamingHUB,0.0,Zero,191,4936.38,24.78,62.17,,98.73,,False
+4931857,Shannon Hodson,Cape Town,ZAR,2013-07-25,2026-04-01,2029-03-26,18,active,mobile,app,Pragmatic Games,3099.86,High (>100),137,752.08,99.74,729.62,,15.04,,False
+4932439,Dale Smiedt,Cape Town,ZAR,2013-07-25,2026-04-01,2014-11-25,21,churned,desktop,app,Pragmatic Games,0.0,Zero,141,2970.65,55.07,144.27,,59.41,,False
+4949973,Jean-Claude Mc Dermott,Roodepoort,ZAR,2019-07-25,2026-04-01,2006-08-25,11,churned,mobile,app,Aviator,0.57,Very Low (<1),83,1904.45,60.55,0.11,,38.09,,False
+4965260,Nokubonga Dlamini,Midrand,ZAR,2024-07-25,2026-04-01,2018-12-25,11,churned,desktop,web,Aviator,0.17,Very Low (<1),10,4849.57,64.92,0.03,,96.99,,False
+4968217,Kapil Rathilal,Johannesburg,ZAR,2025-07-25,2026-04-01,2011-12-25,16,churned,desktop,web,Pragmatic Games,0.98,Very Low (<1),9,4210.59,161.59,642.3,reload_bonus,84.21,87.2,False
+4970516,Tarryn Von Ahlefeldt,"Edenvale,",ZAR,2026-07-25,2026-04-01,2005-11-25,19,churned,mobile,app,Aviator,11.25,Medium (10-100),160,4191.64,110.14,1617.89,welcome_bonus,83.83,372.12,False
+4977101,KARLOS MABASO,Benoni,ZAR,2028-07-25,2026-04-01,2002-03-26,13,churned,mobile,web,Aviator,0.37,Very Low (<1),156,2343.47,65.71,0.07,,46.87,,False
+4985750,Malibongwe Njenjani,Waterloo,ZAR,2015-06-15,2026-04-01,2008-03-26,19,churned,mobile,web,Aviator,1.26,Low (1-10),93,2074.1,124.02,0.25,,41.48,,False
+4987574,Liam Carelse,Cape Town,ZAR,2001-08-25,2026-04-01,2027-09-25,18,active,mobile,web,GamingHUB,0.0,Zero,44,1367.04,144.65,882.6,reload_bonus,27.34,1.16,False
+4990281,Mandla Khumalo,Kwazulu Natal,ZAR,2002-08-25,2026-04-01,2007-08-25,5,churned,desktop,web,Aviator,3.13,Low (1-10),37,281.88,58.16,0.63,reload_bonus,5.64,125.82,False
+4992000,Carmen Pick,Cape Town,ZAR,2002-08-25,2026-04-01,2027-03-26,11,active,desktop,app,Aviator,0.02,Very Low (<1),116,4323.61,85.64,0.0,,86.47,,True
+5009114,Kgotso Mtakani,Sasolburg,ZAR,2007-08-25,2026-04-01,2023-09-25,16,churned,mobile,app,Aviator,9.8,Low (1-10),16,4064.51,28.77,1.96,,81.29,,False
+5028313,Hamisha Tiluk Bharat,Phoenix,ZAR,2012-08-25,2026-04-01,2029-03-26,8,active,mobile,app,Aviator,3.67,Low (1-10),22,4998.59,40.32,0.73,,99.97,,False
+5031292,Jan Solms,Cape Town,ZAR,2012-08-25,2026-04-01,2020-08-25,20,churned,mobile,web,BetGames,0.0,Zero,141,4983.18,137.82,1110.99,reload_bonus,99.66,155.5,False
+5033803,Caesare Anthony,Johannesburg,ZAR,2013-08-25,2026-04-01,2003-10-25,10,churned,mobile,app,Aviator,0.93,Very Low (<1),86,2777.16,40.38,0.19,reload_bonus,55.54,244.74,False
+5037843,Phindile Gladness Shabalala,Cape Town,ZAR,2014-08-25,2026-04-01,2018-11-25,16,churned,mobile,app,Sportsbook,0.58,Very Low (<1),177,3844.94,107.41,173.14,reload_bonus,76.9,308.4,False
+5042962,PARVESH SINGH,Roodepoort,ZAR,2015-08-25,2026-04-01,2018-08-25,14,churned,mobile,app,Pragmatic Games,2.55,Low (1-10),147,4723.83,143.26,768.04,,94.48,,True
+5065144,Daniel Hodson,Cape Town,ZAR,2021-08-25,2026-04-01,2004-03-26,9,churned,desktop,app,Pragmatic Games,0.0,Zero,79,4248.24,25.84,181.5,reload_bonus,84.96,157.96,False
+5068630,Jeandre Cox,Benoni,ZAR,2022-08-25,2026-04-01,2005-11-25,18,churned,mobile,web,Pragmatic Games,0.0,Zero,97,1236.74,115.63,1393.95,,24.73,,False
+5085001,Ramasela Edith Gwangwa,Pretoria,ZAR,2027-08-25,2026-04-01,2024-01-01,12,active,mobile,web,Sportsbook,0.25,Very Low (<1),49,2252.72,55.03,522.32,welcome_bonus,45.05,-39.17,False
+5102009,Etienne Jansen Van Vuuren,Pretoria,ZAR,2001-09-25,2026-04-01,2020-09-25,6,churned,desktop,app,Sportsbook,0.21,Very Low (<1),146,645.8,192.77,2221.98,,12.92,,False
+5107131,Tania Engelbrecht,Roodepoort,ZAR,2003-09-25,2026-04-01,2005-09-25,12,churned,mobile,app,Pragmatic Games,0.35,Very Low (<1),89,4770.26,99.29,1404.06,,95.41,,False
+5139662,Thoko Mbense,Pretoria,ZAR,2012-09-25,2026-04-01,2023-12-25,16,churned,desktop,app,GamingHUB,0.0,Zero,182,3030.87,162.17,1004.03,,60.62,,True
+5149621,Andrea Bowker,Roodepoort,ZAR,2014-09-25,2026-04-01,2027-03-26,6,active,desktop,app,Aviator,23.84,Medium (10-100),181,1143.21,112.29,4.77,reload_bonus,22.86,358.41,False
+5152395,Shivar Sewlall,Johannesburg,ZAR,2015-09-25,2026-04-01,2016-09-25,6,churned,mobile,app,Sportsbook,0.0,Zero,30,3358.5,13.47,75.94,reload_bonus,67.17,694.16,False
+5166913,Hendrik Rautenbach,Cape Town,ZAR,2019-09-25,2026-04-01,2029-01-26,0,active,mobile,app,Pragmatic Games,22.05,Medium (10-100),191,3090.64,128.46,992.53,reload_bonus,61.81,324.26,False
+5195301,Sherwyn Naidoo,Pretoria,ZAR,2026-09-25,2026-04-01,2012-11-25,18,churned,mobile,app,GamingHUB,1.42,Low (1-10),145,1790.81,190.52,893.21,,35.82,,False
+5197340,Linda Nkosi,Schulzendal,ZAR,2027-09-25,2026-04-01,2011-12-25,15,churned,mobile,web,Aviator,0.1,Very Low (<1),80,567.79,122.31,0.02,,11.36,,False
+5201733,HEILA NICOLENE VOS,Malmesbury,ZAR,2028-09-25,2026-04-01,2029-03-26,2,active,mobile,web,Aviator,2.08,Low (1-10),13,3357.87,164.74,0.42,,67.16,,False
+5210901,Catherine Lowe,Johannesburg,ZAR,2001-10-25,2026-04-01,2002-11-25,18,churned,mobile,app,Aviator,0.12,Very Low (<1),175,2601.54,177.42,0.02,,52.03,,False
+5213630,Negotiate Masemola,Mogalecity,ZAR,2002-10-25,2026-04-01,2027-03-26,21,active,mobile,app,Sportsbook,0.23,Very Low (<1),92,3861.59,49.48,548.82,,77.23,,False
+5227557,Jacques De Villiers,Camps Bay,ZAR,2006-10-25,2026-04-01,2020-12-25,17,churned,mobile,web,Pragmatic Games,0.0,Zero,113,2600.82,46.35,291.38,reload_bonus,52.02,277.51,False
+5239277,Matthew More,Plettenberg Bay,ZAR,2009-10-25,2026-04-01,2009-12-25,18,churned,mobile,app,Pragmatic Games,0.0,Zero,55,4260.91,124.14,120.36,,85.22,,True
+5258511,Megeshen Govender,Parkland,ZAR,2014-10-25,2026-04-01,2015-10-25,23,churned,desktop,web,Sportsbook,2.04,Low (1-10),167,2759.53,85.15,260.51,,55.19,,False
+5271422,Egan Peterson,Kathu,ZAR,2017-10-25,2026-04-01,2026-03-26,16,active,mobile,web,Aviator,4.16,Low (1-10),45,2804.69,168.77,0.83,,56.09,,False
+5279519,Loven Pillay,Durban,ZAR,2019-10-25,2026-04-01,2020-10-25,9,churned,mobile,app,Aviator,0.62,Very Low (<1),15,4383.27,180.5,4818.41,,87.67,,False
+5294021,Felicia Govender,Johannesburg,ZAR,2023-10-25,2026-04-01,2024-11-25,15,churned,mobile,app,Pragmatic Games,2.0,Low (1-10),49,2017.41,73.92,503.57,reload_bonus,40.35,108.98,False
+5310172,Gavin Van Staden,Hoedspruit,ZAR,2027-10-25,2026-04-01,2026-03-26,13,active,desktop,web,Aviator,7.87,Low (1-10),165,670.08,51.19,1.57,welcome_bonus,13.4,131.22,False
+5311187,Cornel Lambrechts,Vredendal,ZAR,2027-10-25,2026-04-01,2004-02-26,13,churned,mobile,app,BetGames,0.0,Zero,28,143.91,157.2,429.11,,2.88,,False
+5317083,Kelly Varner,Johannesburg,ZAR,2029-10-25,2026-04-01,2027-02-26,13,active,desktop,web,Pragmatic Games,10.0,Low (1-10),126,3775.69,58.59,861.38,welcome_bonus,75.51,-73.53,False
+5317435,Achaleke Chupacha,Johannesburg,ZAR,2029-10-25,2026-04-01,2029-03-26,14,active,desktop,web,Evolution,0.15,Very Low (<1),105,3101.55,165.41,1791.28,,62.03,,True
+5342601,Jashmir Mathraparsad,Johannesburg,ZAR,2004-11-25,2026-04-01,2029-11-25,13,active,mobile,web,Aviator,0.03,Very Low (<1),114,3520.4,87.63,0.01,reload_bonus,70.41,287.72,False
+5350197,Mbalenhle Mhlongo,Durban,ZAR,2006-11-25,2026-04-01,2020-02-26,5,churned,desktop,app,Aviator,0.08,Very Low (<1),144,1064.82,135.17,0.02,,21.3,,False
+5350915,Leandre Van Zyl,Pretoria,ZAR,2006-11-25,2026-04-01,2010-11-25,11,churned,mobile,web,GamingHUB,0.07,Very Low (<1),144,681.86,23.63,329.14,reload_bonus,13.64,152.16,False
+5362120,Henkie Pretorius,Nigel,ZAR,2009-11-25,2026-04-01,2020-01-26,10,churned,mobile,app,GamingHUB,0.52,Very Low (<1),102,72.72,126.65,289.92,,1.45,,False
+5378712,Daisy Mafubelu,Sandown,ZAR,2014-11-25,2026-04-01,2020-03-26,7,churned,mobile,app,Sportsbook,0.1,Very Low (<1),100,1752.94,93.09,289.68,,35.06,,False
+5383941,Nicole Langley,Edenvale,ZAR,2015-11-25,2026-04-01,2024-12-25,12,churned,mobile,web,Aviator,6.72,Low (1-10),156,2949.59,119.39,1.34,reload_bonus,58.99,408.42,False
+5422413,Saneesa Ward,Bloemfontein,ZAR,2024-11-25,2026-04-01,2024-11-25,11,churned,mobile,app,Evolution,4.0,Low (1-10),169,1961.22,37.76,339.26,,39.22,,False
+5433770,Joashe Mahabeer,Johannesburg,ZAR,2026-11-25,2026-04-01,2026-01-26,7,active,desktop,web,Aviator,0.3,Very Low (<1),101,2187.37,148.69,0.06,,43.75,,False
+5434970,Elem Gizli,Cape Town,ZAR,2026-11-25,2026-04-01,2027-03-26,21,active,mobile,web,BetGames,0.0,Zero,71,4520.79,173.25,2911.88,,90.42,,False
+5445006,Niel Liebenberg,Hermanus,ZAR,2028-11-25,2026-04-01,2022-02-26,14,churned,mobile,app,Pragmatic Games,0.0,Zero,31,1741.28,47.26,234.87,,34.83,,True
+5456071,Vutlhari Kubayi,Benoni,ZAR,2001-12-25,2026-04-01,2002-03-26,16,churned,mobile,app,GamingHUB,0.0,Zero,57,2569.95,23.66,257.46,,51.4,,False
+5494621,Connor Chris McCaffrey,Cape Town,ZAR,2009-12-25,2026-04-01,2010-12-25,18,churned,mobile,app,Pragmatic Games,0.2,Very Low (<1),95,3918.27,9.61,174.75,reload_bonus,78.37,-10.06,True
+5500943,NATHANIA ROUSSEAU,Centurion,ZAR,2011-12-25,2026-04-01,2013-12-25,10,churned,desktop,app,Sportsbook,1.45,Low (1-10),39,1982.71,130.18,367.66,reload_bonus,39.65,422.18,False
+5506572,Clive Palm,Alberton,ZAR,2012-12-25,2026-04-01,2011-01-26,5,churned,mobile,app,Evolution,6.59,Low (1-10),21,3110.43,123.38,505.35,reload_bonus,62.21,120.81,True
+5509608,RAJANDRAN KASAVAN,Chatsworth,ZAR,2012-12-25,2026-04-01,2026-12-25,19,active,mobile,web,Pragmatic Games,0.0,Zero,72,4311.82,111.61,768.43,,86.24,,True
+5510227,Nomsa Sibeko,Secunda,ZAR,2012-12-25,2026-04-01,2024-01-01,10,active,mobile,app,Sportsbook,0.0,Zero,179,4747.6,50.23,782.02,reload_bonus,94.95,66.6,False
+5524365,Wanga Nevhudogwa,Krugersdorp,ZAR,2015-12-25,2026-04-01,2024-03-26,23,churned,mobile,app,Evolution,0.0,Zero,30,735.37,81.23,1159.41,,14.71,,False
+5540758,LEBESE THABANG MAKOTI,Randfontein,ZAR,2019-12-25,2026-04-01,2002-01-26,10,churned,mobile,web,Aviator,0.5,Very Low (<1),6,4632.94,120.92,0.1,,92.66,,False
+5547007,Lana Giliomee,Cape Town,ZAR,2020-12-25,2026-04-01,2005-02-26,22,churned,desktop,app,BetGames,0.0,Zero,99,2460.58,101.87,1899.72,reload_bonus,49.21,89.64,False
+5565369,Hannes Stoman,Cape Town,ZAR,2024-12-25,2026-04-01,2029-12-25,22,active,mobile,web,Sportsbook,20.8,Medium (10-100),104,1291.22,197.62,832.3,,25.82,,False
+5574676,Chantaal Poovan,East London,ZAR,2026-12-25,2026-04-01,2001-02-26,22,churned,desktop,app,Pragmatic Games,3.29,Low (1-10),85,2295.68,31.61,393.7,welcome_bonus,45.91,66.98,True
+5575615,PRIYANDRAN PILLAY,Johannesburg,ZAR,2027-12-25,2026-04-01,2004-01-26,0,churned,mobile,app,Pragmatic Games,0.05,Very Low (<1),156,4900.16,140.55,306.44,welcome_bonus,98.0,-80,True
+5588168,Pragassen  Naidoo,Durban,ZAR,2029-12-25,2026-04-01,2002-02-26,11,churned,mobile,web,Aviator,0.01,Very Low (<1),65,2463.09,83.84,0.0,,49.26,,False
+5614915,BEATRICE SINDISIWE NDLOVU,Durban,ZAR,2003-01-26,2026-04-01,2029-03-26,4,active,mobile,web,Aviator,0.73,Very Low (<1),156,1643.76,88.5,0.15,,32.88,,False
+5631546,RAYNARD LOTTER,Cape Town,ZAR,2007-01-26,2026-04-01,2024-03-26,14,churned,desktop,web,GamingHUB,0.18,Very Low (<1),36,3167.0,144.93,1103.86,,63.34,,True
+5639359,Owethu Sibiya,Roodepoort,ZAR,2008-01-26,2026-04-01,2014-02-26,18,churned,desktop,web,Pragmatic Games,0.0,Zero,159,1200.73,140.03,62.67,,24.01,,False
+5640795,Yaw Boateng,Northcliff,ZAR,2008-01-26,2026-04-01,2024-01-01,0,active,mobile,web,Sportsbook,0.0,Zero,175,379.32,198.29,533.22,reload_bonus,7.59,291.68,False
+5663157,ANATHI MADIKIZELA,Johannesburg,ZAR,2013-01-26,2026-04-01,2020-03-26,15,churned,desktop,app,Sportsbook,0.49,Very Low (<1),79,644.4,30.04,193.94,,12.89,,False
+5663351,Felicia Ndwandwe,Tshepisong,ZAR,2013-01-26,2026-04-01,2018-03-26,12,churned,desktop,app,BetGames,0.41,Very Low (<1),75,640.23,25.3,465.64,,12.8,,False
+5664090,Sisipho Maxengana,Roodepoort,ZAR,2013-01-26,2026-04-01,2016-03-26,11,churned,mobile,web,Aviator,1.68,Low (1-10),109,759.51,146.25,0.34,,15.19,,False
+5672640,Aston Africa,Johannesburg,ZAR,2015-01-26,2026-04-01,2023-03-26,14,churned,mobile,web,Pragmatic Games,56.74,Medium (10-100),38,694.14,117.79,508.55,reload_bonus,13.88,315.97,False
+5684180,LABEEQAH DAVIDS,Cape Town,ZAR,2017-01-26,2026-04-01,2016-03-26,11,churned,mobile,web,Sportsbook,1.31,Low (1-10),39,3204.37,58.46,211.75,,64.09,,False
+5689605,NOTHANDO PROMISE HADEBE,Dannhauser,ZAR,2018-01-26,2026-04-01,2027-01-26,22,active,mobile,app,Pragmatic Games,1.0,Very Low (<1),175,909.4,20.49,479.54,,18.19,,False
+5707968,Zane Sequeira,Cape Town,ZAR,2022-01-26,2026-04-01,2004-03-26,19,churned,desktop,app,Evolution,0.0,Zero,38,1728.34,21.7,24.26,reload_bonus,34.57,406.74,False
+5712028,Jacobus Albertus Kok,Johannesburg,ZAR,2023-01-26,2026-04-01,2024-01-01,9,active,desktop,web,Sportsbook,0.0,Zero,78,4483.94,179.37,815.87,,89.68,,True
+5739355,Rochelle Jacobs,East London,ZAR,2028-01-26,2026-04-01,2016-03-26,21,churned,mobile,app,Sportsbook,0.7,Very Low (<1),184,2369.81,42.41,201.63,welcome_bonus,47.4,303.55,False
+5777998,Excellent Mhlongo,Johannesburg,ZAR,2005-02-26,2026-04-01,2029-03-26,7,active,mobile,web,Aviator,0.73,Very Low (<1),174,3337.79,68.06,0.15,,66.76,,False
+5780499,Tristan Dawson,Durban,ZAR,2006-02-26,2026-04-01,2014-02-26,12,churned,mobile,web,GamingHUB,1.7,Low (1-10),11,861.6,49.2,271.98,,17.23,,False
+5814162,Cuan Richards,Cape Town,ZAR,2013-02-26,2026-04-01,2005-03-26,14,churned,desktop,app,Pragmatic Games,0.1,Very Low (<1),145,961.45,74.22,163.31,reload_bonus,19.23,294.68,False
+5843606,Danie Ernestus Beyleveld,Rusternburg,ZAR,2019-02-26,2026-04-01,2024-01-01,23,active,desktop,web,Aviator,0.21,Very Low (<1),135,204.34,18.54,0.04,,4.09,,True
+5848911,Nduvho Ramabulana,Gauteng,ZAR,2020-02-26,2026-04-01,2024-01-01,15,active,desktop,web,GamingHUB,0.0,Zero,141,844.68,106.22,1128.83,,16.89,,False
+5894477,Mark Gillon,Cape Town,ZAR,2028-02-26,2026-04-01,2027-03-26,23,active,desktop,app,Pragmatic Games,0.0,Zero,72,1392.95,18.18,29.2,,27.86,,False
+6020551,Marthinus Venter,Meyerton,ZAR,2020-03-26,2026-04-01,2021-03-26,3,churned,mobile,web,Pragmatic Games,0.18,Very Low (<1),41,885.05,161.07,1575.91,,17.7,,False
