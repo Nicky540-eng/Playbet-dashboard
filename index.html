@@ -67,14 +67,14 @@
 
 <div class="container">
   <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-    <p>Drag and drop your <strong>cleaned_Slip summary jan-april 2026.csv</strong> file here, or click to browse</p>
+    <p>Upload your <strong>cleaned_Slip summary jan-april 2026.csv</strong> file here to begin</p>
     <input type="file" id="fileInput" style="display:none" accept=".csv" onchange="handleFileSelect(event)"/>
   </div>
 
   <div id="mainContent" style="display:none; flex-direction:column; gap:24px;">
     <div class="kpi-grid">
       <div class="kpi-card">
-        <div class="kpi-label">Total Transactions (Bet Slips)</div>
+        <div class="kpi-label">Total Transactions</div>
         <div class="kpi-value" id="kpi_total_slips">—</div>
         <div class="kpi-sub">Across all branches</div>
       </div>
@@ -122,7 +122,7 @@
       </div>
       <div class="chart-card">
         <div class="chart-header">
-          <div class="section-title">Top 10 Active Branches (Volume)</div>
+          <div class="section-title">Top 10 Active Branches</div>
           <div class="section-desc">Busiest branch performance rankings.</div>
         </div>
         <div class="chart-body"><div id="chart_users" style="height:240px"></div></div>
@@ -159,7 +159,7 @@
     </div>
 
     <div class="insights-card">
-      <div class="section-title">Branch Comparative Analytics & Anomaly Detection</div>
+      <div class="section-title">Data Insights</div>
       <div class="insights-grid" id="insightsGrid"></div>
     </div>
   </div>
@@ -174,8 +174,7 @@
     if (file) {
       const reader = new FileReader();
       reader.onload = function (e) {
-        let text = e.target.result;
-        Papa.parse(text, {
+        Papa.parse(e.target.result, {
           header: true,
           skipEmptyLines: true,
           complete: function(results) {
@@ -213,13 +212,30 @@
     }
   });
 
+  function parseCustomDate(dateStr) {
+    if (!dateStr) return null;
+    // Handle format: "2026-04-30 14:59:07"
+    let parts = dateStr.split(' ');
+    if (parts.length > 0) {
+      let dateParts = parts[0].split('-');
+      if (dateParts.length === 3) {
+        let year = parseInt(dateParts[0]);
+        let month = parseInt(dateParts[1]) - 1;
+        let day = parseInt(dateParts[2]);
+        let timeParts = parts[1] ? parts[1].split(':') : [0,0,0];
+        return new Date(year, month, day, timeParts[0], timeParts[1], timeParts[2]);
+      }
+    }
+    return new Date(dateStr);
+  }
+
   function processData(rows) {
     if (!rows || rows.length === 0) {
       alert('No data or empty CSV file.');
       return;
     }
 
-    // 1. Basic Calculations
+    // 1. Calculations
     let totalUsers = rows.length;
     let totalSlips = rows.reduce((sum, r) => sum + parseInt(r['Bet Slips'] || 0, 10), 0);
     let totalWinnings = rows.reduce((sum, r) => sum + parseFloat(r['Winnings - Unpaid'] || 0), 0);
@@ -232,7 +248,7 @@
     document.getElementById('kpi_gw_margin').textContent = avgGwMargin + '%';
     document.getElementById('kpi_winnings').textContent = 'R' + totalWinnings.toLocaleString();
 
-    // 2. Branch Aggregations and Metrics Calculation
+    // 2. Branch Aggregations
     let branchMetrics = {};
     rows.forEach(r => {
       let bName = r['User'];
@@ -250,7 +266,6 @@
       branchMetrics[bName].netMargins.push(parseFloat(r['Net Win Margin'] || 0));
     });
 
-    // Create aggregated branch records
     let branchList = [];
     for (const [name, data] of Object.entries(branchMetrics)) {
       let tSlips = data.slips.reduce((a,b) => a+b, 0);
@@ -258,13 +273,10 @@
       let sumWinnings = data.winnings.reduce((a,b) => a+b, 0);
       let avgNet = data.netMargins.reduce((a,b) => a+b, 0) / data.netMargins.length;
 
-      // Variability (Standard Deviation / Mean for variation measure)
       let meanSlips = tSlips / data.slips.length;
       let variance = data.slips.reduce((acc, val) => acc + Math.pow(val - meanSlips, 2), 0) / data.slips.length;
       let sd = Math.sqrt(variance);
       let consistency = meanSlips ? (sd / meanSlips) : 0;
-      
-      // Growth placeholder (simulate from dataset values)
       let growth = (data.slips.length > 1) ? ((data.slips[data.slips.length-1] - data.slips[0]) / data.slips[0]) * 100 : 0;
 
       branchList.push({
@@ -278,11 +290,9 @@
       });
     }
 
-    // Sort users/branches by volume 
     branchList.sort((a,b) => b.totalSlips - a.totalSlips);
     let top10Branches = branchList.slice(0, 10);
 
-    // Populate Table Data
     let tableBody = document.getElementById('branchTableBody');
     tableBody.innerHTML = '';
     branchList.forEach(b => {
@@ -299,11 +309,11 @@
       tableBody.appendChild(row);
     });
 
-    // 3. Hourly Activity / Monthly Day Distribution
+    // 3. Activity Calculations
     let hourly = Array(24).fill(0);
     rows.forEach(r => {
-      let dt = new Date(r['Last Slip Issued']);
-      if (!isNaN(dt.getTime())) {
+      let dt = parseCustomDate(r['Last Slip Issued']);
+      if (dt && !isNaN(dt.getTime())) {
         let h = dt.getHours();
         hourly[h] += parseInt(r['Bet Slips'] || 0, 10);
       }
@@ -318,8 +328,8 @@
 
     let daily = Array(32).fill(0);
     rows.forEach(r => {
-      let dt = new Date(r['Last Slip Issued']);
-      if (!isNaN(dt.getTime())) {
+      let dt = parseCustomDate(r['Last Slip Issued']);
+      if (dt && !isNaN(dt.getTime())) {
         let d = dt.getDate();
         daily[d] += parseInt(r['Bet Slips'] || 0, 10);
       }
@@ -334,14 +344,10 @@
 
     let maxHourObj = hourlyData.reduce((prev, current) => (prev.slips > current.slips) ? prev : current);
     let minHourObj = hourlyData.reduce((prev, current) => (prev.slips < current.slips) ? prev : current);
-    
     let maxDayObj = dailyData.reduce((prev, current) => (prev.slips > current.slips) ? prev : current);
-    let minDayObj = dailyData.reduce((prev, current) => (prev.slips < current.slips) ? prev : current);
 
-    // Margin distribution data
     let marginData = rows.map(r => parseFloat(r['Net Win Margin'] || 0));
 
-    // Chart Configuration
     const layout = {
       font: { color: '#e8edf5', family: 'DM Sans' },
       paper_bgcolor: 'transparent',
@@ -363,7 +369,7 @@
     Plotly.newPlot('chart_monthly', [{
       type: 'bar',
       x: dailyData.map(d => `Day ${d.day}`),
-      y: dailyData.map(d => d.slips),
+      y: dailyData.map(d => dailyData[d]),
       marker: { color: '#f59e0b', opacity: 0.8 }
     }], Object.assign({}, layout, { margin: { l: 60, r: 20, t: 20, b: 60 } }));
 
@@ -387,15 +393,14 @@
       marker: { color: '#e74c3c', opacity: 0.8 }
     }], Object.assign({}, layout, { margin: { l: 50, r: 20, t: 20, b: 80 }, xaxis: { tickangle: -20, tickfont: { size: 9 } } }));
 
-    // Insights and Comparative Analysis
     let topVolumeBranch = branchList[0];
     let topGrowthBranch = branchList.reduce((prev, current) => (parseFloat(prev.growth) > parseFloat(current.growth)) ? prev : current);
 
     const insights = [
-      { icon: '🕒', title: 'Busiest Time', text: `Transactions peak at ${maxHourObj = maxHourObj.hourLabel} with ${maxObj.slips.toLocaleString()} slips.` },
+      { icon: '🕒', title: 'Busiest Time', text: `Transactions peak at ${maxHourObj.hourLabel} with ${maxHourObj.slips.toLocaleString()} slips.` },
       { icon: '📅', title: 'Peak Day of Month', text: `Busiest month day is Day ${maxDayObj.day} with ${maxDayObj.slips.toLocaleString()} slips.` },
-      { icon: '🏆', title: 'Overall Best Performer', text: `Branch <b>${topVolumeBranch.name}</b> holds the most bet slips processed (${topVolumeBranch.totalSlips.toLocaleString()}).` },
-      { icon: '📈', title: 'Fastest Growth', text: `Branch <b>${topGrowthBranch.name}</b> with an overall growth rate of ${topGrowthBranch.growth}%.` }
+      { icon: '🏆', title: 'Overall Best Performer', text: `Branch <b>${topVolumeBranch.name}</b> has the highest total volume.` },
+      { icon: '📈', title: 'Fastest Growth', text: `Branch <b>${topGrowthBranch.name}</b> at ${topGrowthBranch.growth}% growth.` }
     ];
 
     document.getElementById('insightsGrid').innerHTML = insights.map(i => `
