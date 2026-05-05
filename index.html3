@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Playbet SA — Ticket Activity Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:#0b0f1a; --surface:#121826; --surface2:#1a2236; --border:#1f2d45;
+    --accent:#00d4a0; --accent2:#f59e0b; --text:#e8edf5; --text-muted:#6b7e99; --text-dim:#3d4f66;
+    --green:#27AE60; --red:#E74C3C; --orange:#F39C12; --blue:#3498DB;
+    --card-glow:0 0 0 1px var(--border),0 4px 24px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh}
+
+  header{display:flex;justify-content:space-between;align-items:center;padding:16px 32px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .logo{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px}
+  .logo span{color:var(--accent)}
+
+  .container{max-width:1280px;margin:0 auto;padding:32px 16px;display:flex;flex-direction:column;gap:24px}
+
+  /* Upload Area */
+  .upload-zone{border:2px dashed var(--border);border-radius:8px;padding:48px 24px;text-align:center;background:var(--surface);cursor:pointer;transition:all .2s ease}
+  .upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:var(--surface2)}
+  .upload-zone p{margin-bottom:8px}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:16px}
+  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:20px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--card-glow)}
+  .kpi-label{font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em}
+  .kpi-value{font-family:'Syne',sans-serif;font-size:24px;font-weight:700;color:var(--text)}
+  .kpi-sub{font-size:11px;color:var(--text-dim)}
+
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+
+  .chart-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:24px;box-shadow:var(--card-glow);display:flex;flex-direction:column;gap:16px}
+  .chart-header{display:flex;flex-direction:column;gap:4px}
+  .section-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:600;color:var(--text)}
+  .section-desc{font-size:11px;color:var(--text-muted)}
+
+  .insights-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:24px;box-shadow:var(--card-glow)}
+  .insights-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:16px;margin-top:16px}
+  .insight-item{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:16px;display:flex;gap:12px}
+  .insight-icon{font-size:20px}
+  .insight-text{font-size:12px;color:var(--text-muted)}
+  .insight-text strong{display:block;color:var(--text);font-size:13px;font-weight:600;margin-bottom:2px}
+
+  .footer{text-align:center;font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);padding:32px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span>PLAYBET</span> SA Activity Dashboard</div>
+</header>
+
+<div class="container">
+  <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+    <p>Drag and drop your <strong>cleaned_Slip summary jan-april 2026.csv</strong> file here, or click to browse</p>
+    <input type="file" id="fileInput" style="display:none" accept=".csv" onchange="handleFileSelect(event)"/>
+  </div>
+
+  <div id="mainContent" style="display:none; flex-direction:column; gap:24px;">
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Bet Slips</div>
+        <div class="kpi-value" id="kpi_total_slips">—</div>
+        <div class="kpi-sub">Across all users</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Users</div>
+        <div class="kpi-value" id="kpi_users">—</div>
+        <div class="kpi-sub">Unique accounts</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Average GW Margin %</div>
+        <div class="kpi-value" id="kpi_gw_margin">—</div>
+        <div class="kpi-sub">Overall mean</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Winnings Unpaid</div>
+        <div class="kpi-value" id="kpi_winnings">—</div>
+        <div class="kpi-sub">Sum of amounts</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="section-title">1. Hourly Ticket Activity</div>
+          <div class="section-desc">Times most/least tickets are played.</div>
+        </div>
+        <div class="chart-body"><div id="chart_hourly" style="height:280px"></div></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="section-title">2. Time of the Month - Volume</div>
+          <div class="section-desc">Volume of bets per day across the month.</div>
+        </div>
+        <div class="chart-body"><div id="chart_monthly" style="height:280px"></div></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="section-title">Net Win Margin Distribution</div>
+          <div class="section-desc">Distribution of margins for performance tracking.</div>
+        </div>
+        <div class="chart-body"><div id="chart_margin" style="height:280px"></div></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="section-title">Top 10 Active Users</div>
+          <div class="section-desc">Based on total bet slips.</div>
+        </div>
+        <div class="chart-body"><div id="chart_users" style="height:280px"></div></div>
+      </div>
+    </div>
+
+    <div class="insights-card">
+      <div class="section-title">Data Insights</div>
+      <div class="insights-grid" id="insightsGrid"></div>
+    </div>
+  </div>
+
+</div>
+
+<footer class="footer" id="footerText">PLAYBET SA DASHBOARD &nbsp;|&nbsp; UPLOAD A CSV TO BEGIN</footer>
+
+<script>
+  function handleSelect(evt) {
+    const file = evt.target.files[0];
+    if (file) parseCSV(file);
+  }
+
+  // Drag-and-drop integration
+  const dropZone = document.getElementById('uploadZone');
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) parseCSV(file);
+  });
+
+  function parseCSV(file) {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results) {
+        processData(results.data);
+      }
+    });
+  }
+
+  function processData(rows) {
+    if (!rows || rows.length === 0) {
+      alert('No data or empty CSV file.');
+      return;
+    }
+
+    // 1. Calculate KPIs
+    let totalUsers = rows.length;
+    let totalSlips = rows.reduce((sum, r) => sum + parseInt(r['Bet Slips'] || 0, 10), 0);
+    let totalWinnings = rows.reduce((sum, r) => sum + parseFloat(r['Winnings - Unpaid'] || 0), 0);
+    
+    let totalGwMargin = rows.reduce((sum, r) => sum + parseFloat(r['GW Margin %'] || 0), 0);
+    let avgGwMargin = (totalGwMargin / totalUsers).toFixed(2);
+
+    document.getElementById('kpi_total_slips').textContent = totalSlips.toLocaleString();
+    document.getElementById('kpi_users').textContent = totalUsers.toLocaleString();
+    document.getElementById('kpi_gw_margin').textContent = avgGwMargin + '%';
+    document.getElementById('kpi_winnings').textContent = 'R' + totalWinnings.toLocaleString();
+
+    // 2. Compute Hourly Usage Pattern
+    let hourly = Array(24).fill(0);
+    rows.forEach(r => {
+      let dt = new Date(r['Last Slip Issued']);
+      if (!isNaN(dt.getTime())) {
+        let h = dt.getHours();
+        hourly[h] += parseInt(r['Bet Slips'] || 0, 10);
+      }
+    });
+
+    let hourlyData = [];
+    for (let i = 0; i < 24; i++) {
+      if (hourly[i] > 0) {
+        hourlyData.push({ hourLabel: `${i}:00`, slips: hourly[i], hour: i });
+      }
+    }
+
+    // 3. Compute Monthly Day Distribution
+    let daily = Array(32).fill(0);
+    rows.forEach(r => {
+      let dt = new Date(r['Last Slip Issued']);
+      if (!isNaN(dt.getTime())) {
+        let d = dt.getDate();
+        daily[d] += parseInt(r['Bet Slips'] || 0, 10);
+      }
+    });
+
+    let dailyData = [];
+    for (let i = 1; i <= 31; i++) {
+      if (daily[i] > 0) {
+        dailyData.push({ day: i, slips: daily[i] });
+      }
+    }
+
+    // Identify busiest and quietest times
+    let maxHourObj = hourlyData.reduce((prev, current) => (prev.slips > current.slips) ? prev : current);
+    let minHourObj = hourlyData.reduce((prev, current) => (prev.slips < current.slips) ? prev : current);
+
+    // Identify busiest and quietest days in month
+    let maxDayObj = dailyData.reduce((prev, current) => (prev.slips > current.slips) ? prev : current);
+    let minDayObj = dailyData.reduce((prev, current) => (prev.slips < current.slips) ? prev : current);
+
+    // Top 10 users data
+    let sortedUsers = [...rows].sort((a,b) => parseInt(b['Bet Slips'],10) - parseInt(a['Bet Slips'],10)).slice(0, 10);
+    
+    // Margin distribution data
+    let marginData = rows.map(r => parseFloat(r['Net Win Margin'] || 0));
+
+    // Plot styling configuration
+    const layout = {
+      font: { color: '#e8edf5', family: 'DM Sans' },
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: 'transparent',
+      margin: { l: 50, r: 20, t: 30, b: 50 },
+      xaxis: { gridcolor: '#1f2d45', linecolor: '#1f2d45', tickfont: { color: '#6b7e99', size: 10 } },
+      yaxis: { gridcolor: '#1f2d45', linecolor: '#1f2d45', tickfont: { color: '#6b7e99', size: 10 } }
+    };
+
+    Plotly.newPlot('chart_hourly', [{
+      type: 'bar',
+      x: hourlyData.map(h => h.hourLabel),
+      y: hourlyData.map(h => h.slips),
+      marker: { color: '#00d4a0', opacity: 0.8 },
+      text: hourlyData.map(h => h.slips.toLocaleString()),
+      textposition: 'outside'
+    }], Object.assign({}, layout, { margin: { l: 60, r: 20, t: 20, b: 60 } }));
+
+    Plotly.newPlot('chart_monthly', [{
+      type: 'bar',
+      x: dailyData.map(d => `Day ${d.day}`),
+      y: dailyData.map(d => d.slips),
+      marker: { color: '#f59e0b', opacity: 0.8 }
+    }], Object.assign({}, layout, { margin: { l: 60, r: 20, t: 20, b: 60 } }));
+
+    Plotly.newPlot('chart_margin', [{
+      type: 'histogram',
+      x: marginData,
+      marker: { color: '#3498DB', opacity: 0.8 }
+    }], layout);
+
+    Plotly.newPlot('chart_users', [{
+      type: 'bar',
+      x: sortedUsers.map(r => r.User),
+      y: sortedUsers.map(r => parseInt(r['Bet Slips'], 10)),
+      marker: { color: '#27ae60', opacity: 0.8 }
+    }], Object.assign({}, layout, { margin: { l: 80, r: 20, t: 20, b: 80 }, xaxis: { tickangle: -20, tickfont: { size: 9 } } }));
+
+    // Dynamically assign insights 
+    const insights = [
+      { icon: '🕒', title: 'Busiest Time', text: `Most tickets are played at ${maxHourObj.hourLabel} with ${maxHourObj.slips.toLocaleString()} slips.` },
+      { icon: '🕒', title: 'Quiet Time', text: `Least tickets are played at ${minHourObj.hourLabel} with ${minHourObj.slips.toLocaleString()} slips.` },
+      { icon: '📅', title: 'Max Volume Day', text: `Month day with maximum volume is Day ${maxDayObj.day} with ${maxDayObj.slips.toLocaleString()} slips.` },
+      { icon: '📅', title: 'Low Volume Day', text: `Month day with least volume is Day ${minDayObj.day} with ${minDayObj.slips.toLocaleString()} slips.` }
+    ];
+
+    document.getElementById('insightsGrid').innerHTML = insights.map(i => `
+      <div class="insight-item">
+        <span class="insight-icon">${i.icon}</span>
+        <div class="insight-text"><strong>${i.title}</strong>${i.text}</div>
+      </div>`).join('');
+
+    document.getElementById('uploadZone').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'flex';
+    document.getElementById('footerText').textContent = `PLAYBET SA DASHBOARD  |  ${totalUsers} Users Processed`;
+  }
+</script>
+
+</body>
+</html>
