@@ -1,9 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Playbet SA — Branch Performance Dashboard</title>
+<title>Playbet SA — Executive Dashboard</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
@@ -24,9 +22,15 @@
   .container{max-width:1280px;margin:0 auto;padding:32px 16px;display:flex;flex-direction:column;gap:24px}
 
   /* Upload Area */
-  .upload-zone{border:2px dashed var(--border);border-radius:8px;padding:48px 24px;text-align:center;background:var(--surface);cursor:pointer;transition:all .2s ease}
+  .upload-zone{border:2px dashed var(--border);border-radius:8px;padding:64px 24px;text-align:center;background:var(--surface);cursor:pointer;transition:all .2s ease}
   .upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:var(--surface2)}
-  .upload-zone p{margin-bottom:8px}
+  .upload-zone p{margin-bottom:8px;font-size:14px}
+  .upload-zone span{color:var(--text-muted);font-size:12px}
+
+  /* Control Panel */
+  .control-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:20px;display:flex;justify-content:space-between;align-items:center;box-shadow:var(--card-glow)}
+  .select-group{display:flex;align-items:center;gap:16px}
+  select{background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:8px 16px;border-radius:4px;font-family:'DM Sans',sans-serif;outline:none}
 
   .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:16px}
   .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:20px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--card-glow)}
@@ -62,36 +66,48 @@
 <body>
 
 <header>
-  <div class="logo"><span>PLAYBET</span> SA Branch Performance Dashboard</div>
+  <div class="logo"><span>PLAYBET</span> SA Executive Dashboard</div>
 </header>
 
 <div class="container">
   <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-    <p>Upload your <strong>cleaned_Slip summary jan-april 2026.csv</strong> file here to begin</p>
+    <p>Upload your <strong>cleaned_Slip summary jan-april 2026.csv</strong> file to start analysis</p>
+    <span>Click or drag and drop files directly here</span>
     <input type="file" id="fileInput" style="display:none" accept=".csv" onchange="handleFileSelect(event)"/>
   </div>
 
   <div id="mainContent" style="display:none; flex-direction:column; gap:24px;">
+    
+    <div class="control-card">
+      <div class="select-group">
+        <label style="font-size:13px; color:var(--text-muted);">Select Branch Profile:</label>
+        <select id="branchSelector" onchange="filterBranchData()">
+          <option value="All">-- View All Entities --</option>
+        </select>
+      </div>
+      <div style="font-size:11px; color:var(--accent);" id="selectedBranchReport">Displaying full company overview</div>
+    </div>
+
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-label">Total Transactions</div>
         <div class="kpi-value" id="kpi_total_slips">—</div>
-        <div class="kpi-sub">Across all branches</div>
+        <div class="kpi-sub">Total bet slips</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Total Branches/Users</div>
-        <div class="kpi-value" id="kpi_users">—</div>
-        <div class="kpi-sub">Unique entities</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Avg GW Margin %</div>
+        <div class="kpi-label">Average GW Margin</div>
         <div class="kpi-value" id="kpi_gw_margin">—</div>
-        <div class="kpi-sub">Entity average</div>
+        <div class="kpi-sub">Entity mean</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Total Winnings Unpaid</div>
+        <div class="kpi-label">Total Unpaid Winnings</div>
         <div class="kpi-value" id="kpi_winnings">—</div>
         <div class="kpi-sub">Sum of amounts</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Variation (C.V)</div>
+        <div class="kpi-value" id="kpi_consistency">—</div>
+        <div class="kpi-sub">Consistency metric</div>
       </div>
     </div>
 
@@ -116,14 +132,14 @@
       <div class="chart-card">
         <div class="chart-header">
           <div class="section-title">Net Win Margin Distribution</div>
-          <div class="section-desc">Spread of margins across branches.</div>
+          <div class="section-desc">Spread of margins for the selection.</div>
         </div>
         <div class="chart-body"><div id="chart_margin" style="height:240px"></div></div>
       </div>
       <div class="chart-card">
         <div class="chart-header">
-          <div class="section-title">Top 10 Active Branches</div>
-          <div class="section-desc">Busiest branch performance rankings.</div>
+          <div class="section-title">Volume Ranking</div>
+          <div class="section-desc">Comparing entity transaction rates.</div>
         </div>
         <div class="chart-body"><div id="chart_users" style="height:240px"></div></div>
       </div>
@@ -159,7 +175,7 @@
     </div>
 
     <div class="insights-card">
-      <div class="section-title">Data Insights</div>
+      <div class="section-title">Analytical Insights</div>
       <div class="insights-grid" id="insightsGrid"></div>
     </div>
   </div>
@@ -169,6 +185,8 @@
 <footer class="footer" id="footerText">PLAYBET SA DASHBOARD &nbsp;|&nbsp; UPLOAD A CSV TO BEGIN</footer>
 
 <script>
+  let allGlobalRows = [];
+
   function handleFileSelect(evt) {
     const file = evt.target.files[0];
     if (file) {
@@ -178,7 +196,8 @@
           header: true,
           skipEmptyLines: true,
           complete: function(results) {
-            processData(results.data);
+            allGlobalRows = results.data;
+            processData(allGlobalRows);
           }
         });
       };
@@ -204,7 +223,8 @@
           header: true,
           skipEmptyLines: true,
           complete: function(results) {
-            processData(results.data);
+            allGlobalRows = results.data;
+            processData(allGlobalRows);
           }
         });
       };
@@ -214,7 +234,6 @@
 
   function parseCustomDate(dateStr) {
     if (!dateStr) return null;
-    // Handle format: "2026-04-30 14:59:07"
     let parts = dateStr.split(' ');
     if (parts.length > 0) {
       let dateParts = parts[0].split('-');
@@ -229,28 +248,42 @@
     return new Date(dateStr);
   }
 
-  function processData(rows) {
+  function filterBranchData() {
+    const selectedBranch = document.getElementById('branchSelector').value;
+    if (selectedBranch === 'All') {
+      processData(allGlobalRows);
+      document.getElementById('selectedBranchReport').textContent = 'Displaying full company overview';
+    } else {
+      const filtered = allGlobalRows.filter(r => r['User'] === selectedBranch);
+      processData(filtered, selectedBranch);
+      document.getElementById('selectedBranchReport').textContent = `Focusing on: ${selectedBranch}`;
+    }
+  }
+
+  function processData(rows, filterName = null) {
     if (!rows || rows.length === 0) {
       alert('No data or empty CSV file.');
       return;
     }
 
-    // 1. Calculations
     let totalUsers = rows.length;
     let totalSlips = rows.reduce((sum, r) => sum + parseInt(r['Bet Slips'] || 0, 10), 0);
     let totalWinnings = rows.reduce((sum, r) => sum + parseFloat(r['Winnings - Unpaid'] || 0), 0);
     
     let totalGwMargin = rows.reduce((sum, r) => sum + parseFloat(r['GW Margin %'] || 0), 0);
-    let avgGwMargin = (totalGwMargin / totalUsers).toFixed(2);
+    let avgGwMargin = totalUsers ? (totalGwMargin / totalUsers).toFixed(2) : '0.0';
 
-    document.getElementById('kpi_total_slips').textContent = totalSlips.toLocaleString();
-    document.getElementById('kpi_users').textContent = totalUsers.toLocaleString();
-    document.getElementById('kpi_gw_margin').textContent = avgGwMargin + '%';
-    document.getElementById('kpi_winnings').textContent = 'R' + totalWinnings.toLocaleString();
+    if (!filterName && document.getElementById('branchSelector').children.length <= 1) {
+      let uniqueBranches = [...new Set(allGlobalRows.map(r => r['User']))].sort();
+      let selectElem = document.getElementById('branchSelector');
+      selectElem.innerHTML = '<option value="All">-- View All Entities --</option>';
+      uniqueBranches.forEach(b => {
+        selectElem.innerHTML += `<option value="${b}">${b}</option>`;
+      });
+    }
 
-    // 2. Branch Aggregations
     let branchMetrics = {};
-    rows.forEach(r => {
+    allGlobalRows.forEach(r => {
       let bName = r['User'];
       if (!branchMetrics[bName]) {
         branchMetrics[bName] = {
@@ -267,6 +300,7 @@
     });
 
     let branchList = [];
+    let overallCoeffSum = 0;
     for (const [name, data] of Object.entries(branchMetrics)) {
       let tSlips = data.slips.reduce((a,b) => a+b, 0);
       let avgGw = data.gwMargins.reduce((a,b) => a+b, 0) / data.gwMargins.length;
@@ -278,6 +312,8 @@
       let sd = Math.sqrt(variance);
       let consistency = meanSlips ? (sd / meanSlips) : 0;
       let growth = (data.slips.length > 1) ? ((data.slips[data.slips.length-1] - data.slips[0]) / data.slips[0]) * 100 : 0;
+      
+      overallCoeffSum += consistency;
 
       branchList.push({
         name: name,
@@ -292,7 +328,16 @@
 
     branchList.sort((a,b) => b.totalSlips - a.totalSlips);
     let top10Branches = branchList.slice(0, 10);
+    let averageVariability = branchList.length ? (overallCoeffSum / branchList.length) : 0;
 
+    // Update KPIs
+    document.getElementById('kpi_total_slips').textContent = totalSlips.toLocaleString();
+    document.getElementById('kpi_users').textContent = totalUsers.toLocaleString();
+    document.getElementById('kpi_gw_margin').textContent = avgGwMargin + '%';
+    document.getElementById('kpi_winnings').textContent = 'R' + totalWinnings.toLocaleString();
+    document.getElementById('kpi_consistency').textContent = averageVariability.toFixed(3);
+
+    // Populate Table Data
     let tableBody = document.getElementById('branchTableBody');
     tableBody.innerHTML = '';
     branchList.forEach(b => {
@@ -309,7 +354,6 @@
       tableBody.appendChild(row);
     });
 
-    // 3. Activity Calculations
     let hourly = Array(24).fill(0);
     rows.forEach(r => {
       let dt = parseCustomDate(r['Last Slip Issued']);
@@ -342,9 +386,9 @@
       }
     }
 
-    let maxHourObj = hourlyData.reduce((prev, current) => (prev.slips > current.slips) ? prev : current);
-    let minHourObj = hourlyData.reduce((prev, current) => (prev.slips < current.slips) ? prev : current);
-    let maxDayObj = dailyData.reduce((prev, current) => (prev.slips > current.slips) ? prev : current);
+    let maxHourObj = hourlyData.length ? hourlyData.reduce((prev, current) => (prev.slips > current.slips) ? prev : current) : { hourLabel: "0:00", slips: 0 };
+    let minHourObj = hourlyData.length ? hourlyData.reduce((prev, current) => (prev.slips < current.slips) ? prev : current) : { hourLabel: "0:00", slips: 0 };
+    let maxDayObj = dailyData.length ? dailyData.reduce((prev, current) => (prev.slips > current.slips) ? prev : current) : { day: 1, slips: 0 };
 
     let marginData = rows.map(r => parseFloat(r['Net Win Margin'] || 0));
 
@@ -369,7 +413,7 @@
     Plotly.newPlot('chart_monthly', [{
       type: 'bar',
       x: dailyData.map(d => `Day ${d.day}`),
-      y: dailyData.map(d => dailyData[d]),
+      y: dailyData.map(d => d.slips),
       marker: { color: '#f59e0b', opacity: 0.8 }
     }], Object.assign({}, layout, { margin: { l: 60, r: 20, t: 20, b: 60 } }));
 
@@ -393,14 +437,11 @@
       marker: { color: '#e74c3c', opacity: 0.8 }
     }], Object.assign({}, layout, { margin: { l: 50, r: 20, t: 20, b: 80 }, xaxis: { tickangle: -20, tickfont: { size: 9 } } }));
 
-    let topVolumeBranch = branchList[0];
-    let topGrowthBranch = branchList.reduce((prev, current) => (parseFloat(prev.growth) > parseFloat(current.growth)) ? prev : current);
-
     const insights = [
       { icon: '🕒', title: 'Busiest Time', text: `Transactions peak at ${maxHourObj.hourLabel} with ${maxHourObj.slips.toLocaleString()} slips.` },
       { icon: '📅', title: 'Peak Day of Month', text: `Busiest month day is Day ${maxDayObj.day} with ${maxDayObj.slips.toLocaleString()} slips.` },
-      { icon: '🏆', title: 'Overall Best Performer', text: `Branch <b>${topVolumeBranch.name}</b> has the highest total volume.` },
-      { icon: '📈', title: 'Fastest Growth', text: `Branch <b>${topGrowthBranch.name}</b> at ${topGrowthBranch.growth}% growth.` }
+      { icon: '🏆', title: 'Overall Performance', text: `Branch <b>${topVolumeBranch.name}</b> holds maximum volume of operations.` },
+      { icon: '📈', title: 'Growth Indicator', text: `Branch <b>${topVolumeBranch.name}</b> holds the fastest growth rate at ${topVolumeBranch.growth}%.` }
     ];
 
     document.getElementById('insightsGrid').innerHTML = insights.map(i => `
@@ -411,7 +452,7 @@
 
     document.getElementById('uploadZone').style.display = 'none';
     document.getElementById('mainContent').style.display = 'flex';
-    document.getElementById('footerText').textContent = `PLAYBET SA BRANCH DASHBOARD  |  ${totalUsers} Users Processed`;
+    document.getElementById('footerText').textContent = `PLAYBET SA BRANCH DASHBOARD  |  ${rows.length} records processed`;
   }
 </script>
 
