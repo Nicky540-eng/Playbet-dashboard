@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Playbet SA — Executive Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:#0b0f1a; --surface:#121826; --surface2:#1a2236; --border:#1f2d45;
+    --accent:#00d4a0; --accent2:#f59e0b; --text:#e8edf5; --text-muted:#6b7e99; --text-dim:#3d4f66;
+    --green:#27AE60; --red:#E74C3C; --orange:#F39C12; --blue:#3498DB;
+    --card-glow:0 0 0 1px var(--border),0 4px 24px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh}
+
+  /* HEADER */
+  .header{background:linear-gradient(135deg,#0b0f1a,#0f1d2e);border-bottom:1px solid var(--border);
+    padding:18px 32px;display:flex;align-items:center;justify-content:space-between;
+    position:sticky;top:0;z-index:100;backdrop-filter:blur(12px)}
+  .logo-block{display:flex;align-items:center;gap:14px}
+  .logo-mark{width:40px;height:40px;background:var(--accent);border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:#0b0f1a}
+  .logo-text{font-family:'Syne',sans-serif;font-weight:800;font-size:20px}
+  .logo-sub{font-family:'DM Mono',monospace;font-size:10px;color:var(--accent);letter-spacing:.15em;text-transform:uppercase}
+  .header-right{display:flex;align-items:center;gap:10px}
+  .date-chip{background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+    padding:6px 14px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-muted)}
+
+  /* UPLOAD ZONE */
+  .upload-zone{
+    margin:24px 32px;border:2px dashed var(--border);border-radius:16px;
+    padding:32px;text-align:center;cursor:pointer;transition:all .25s;
+    background:var(--surface);position:relative;overflow:hidden}
+  .upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:rgba(0,212,160,.04)}
+  .upload-zone.has-data{border-style:solid;border-color:var(--accent);padding:16px 24px}
+  .upload-icon{font-size:36px;margin-bottom:10px;opacity:.5}
+  .upload-title{font-family:'Syne',sans-serif;font-weight:700;font-size:16px;margin-bottom:6px}
+  .upload-sub{font-size:12px;color:var(--text-muted);margin-bottom:16px}
+  .upload-input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+  .btn-upload{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#0b0f1a;
+    border:none;border-radius:8px;padding:10px 22px;font-family:'Syne',sans-serif;
+    font-weight:700;font-size:13px;cursor:pointer;pointer-events:none}
+  .upload-status{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .status-badge{background:rgba(0,212,160,.12);border:1px solid rgba(0,212,160,.3);
+    color:var(--accent);border-radius:8px;padding:4px 12px;
+    font-family:'DM Mono',monospace;font-size:11px}
+  .btn-clear{background:transparent;border:1px solid var(--border);color:var(--text-muted);
+    border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;transition:all .2s}
+  .btn-clear:hover{border-color:var(--red);color:var(--red)}
+
+  /* ERROR BANNER */
+  .err-banner{margin:0 32px 16px;background:rgba(231,76,60,.1);border:1px solid rgba(231,76,60,.3);
+    border-radius:10px;padding:12px 18px;font-size:12px;color:#e07070;display:none}
+
+  /* MAIN */
+  .main{padding:8px 32px 32px;display:flex;flex-direction:column;gap:20px}
+
+  /* KPI */
+  .kpi-bar{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:18px 20px;position:relative;overflow:hidden;box-shadow:var(--card-glow);transition:transform .2s}
+  .kpi-card:hover{transform:translateY(-2px)}
+  .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent)}
+  .kpi-card.warn::before{background:var(--orange)}
+  .kpi-card.danger::before{background:var(--red)}
+  .kpi-card.info::before{background:var(--blue)}
+  .kpi-label{font-size:10px;color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px}
+  .kpi-value{font-family:'Syne',sans-serif;font-weight:800;font-size:24px;line-height:1}
+  .kpi-sub{font-size:11px;color:var(--text-muted);margin-top:6px;font-family:'DM Mono',monospace}
+  .kpi-icon{position:absolute;right:16px;top:16px;font-size:20px;opacity:.2}
+
+  /* SECTION */
+  .section-title{font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
+    display:flex;align-items:center;gap:8px}
+  .section-title::before{content:'';width:3px;height:14px;background:var(--accent);border-radius:2px}
+  .section-desc{font-size:11px;color:var(--text-muted);margin-top:3px;padding-left:11px}
+
+  /* GRIDS */
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+
+  /* CHART CARDS */
+  .chart-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;box-shadow:var(--card-glow);transition:transform .2s}
+  .chart-card:hover{transform:translateY(-2px)}
+  .chart-header{padding:14px 20px 10px;border-bottom:1px solid var(--border)}
+  .chart-body{padding:4px 8px 8px}
+
+  /* INSIGHTS */
+  .insights-card{background:linear-gradient(135deg,var(--surface),#0f1e35);
+    border:1px solid var(--border);border-radius:14px;padding:22px 26px;box-shadow:var(--card-glow)}
+  .insights-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+  .insight-item{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;
+    background:var(--surface2);border-radius:10px;border:1px solid var(--border);
+    font-size:12px;color:var(--text-muted);line-height:1.5}
+  .insight-icon{font-size:15px;flex-shrink:0;margin-top:1px}
+  .insight-text strong{color:var(--text);display:block;font-size:12px;margin-bottom:2px}
+
+  /* PLACEHOLDER */
+  .chart-placeholder{height:240px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:8px;color:var(--text-dim)}
+  .chart-placeholder svg{opacity:.2}
+  .chart-placeholder p{font-size:11px;font-family:'DM Mono',monospace}
+
+  /* TOAST */
+  .toast{position:fixed;bottom:28px;right:28px;background:var(--accent);color:#0b0f1a;
+    font-family:'Syne',sans-serif;font-weight:700;font-size:13px;padding:12px 22px;
+    border-radius:10px;box-shadow:0 4px 20px rgba(0,212,160,.4);z-index:300;
+    transform:translateY(80px);opacity:0;transition:all .35s cubic-bezier(.4,0,.2,1);pointer-events:none}
+  .toast.show{transform:translateY(0);opacity:1}
+
+  /* FOOTER */
+  .footer{text-align:center;padding:18px;font-family:'DM Mono',monospace;font-size:10px;
+    color:var(--text-dim);letter-spacing:.08em;border-top:1px solid var(--border);margin-top:8px}
+
+  @media(max-width:1100px){
+    .kpi-bar{grid-template-columns:repeat(3,1fr)}
+    .grid-2,.grid-3{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="logo-block">
+    <div class="logo-mark">PB</div>
+    <div>
+      <div class="logo-text">PLAYBET SA</div>
+      <div class="logo-sub">Executive Dashboard</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="date-chip" id="dateChip">📅 Upload CSV to begin</div>
+  </div>
+</header>
+
+<!-- UPLOAD ZONE -->
+<div class="upload-zone" id="uploadZone">
+  <input type="file" accept=".csv" class="upload-input" id="csvInput" onchange="handleFile(this.files[0])"/>
+  <div id="uploadPrompt">
+    <div class="upload-icon">📂</div>
+    <div class="upload-title">Drop your CSV file here</div>
+    <div class="upload-sub">Upload the Playbet user data CSV to populate all charts instantly</div>
+    <div class="btn-upload">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Choose CSV File
+    </div>
+  </div>
+  <div id="uploadSuccess" style="display:none">
+    <div class="upload-status">
+      <span style="font-size:22px">✅</span>
+      <div>
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px" id="fileName">data.csv</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px" id="fileStats">—</div>
+      </div>
+      <span class="status-badge" id="statusBadge">201 rows loaded</span>
+      <button class="btn-clear" onclick="clearData()">✕ Clear</button>
+    </div>
+  </div>
+</div>
+
+<!-- ERROR BANNER -->
+<div class="err-banner" id="errBanner"></div>
+
+<!-- MAIN -->
+<main class="main" id="mainContent" style="display:none">
+
+  <!-- KPI BAR -->
+  <div class="kpi-bar">
+    <div class="kpi-card">
+      <div class="kpi-icon">👥</div>
+      <div class="kpi-label">Total Users</div>
+      <div class="kpi-value" id="kpi_total">—</div>
+      <div class="kpi-sub" id="kpi_active_sub">—</div>
+    </div>
+    <div class="kpi-card danger">
+      <div class="kpi-icon">⏳</div>
+      <div class="kpi-label">Churn Rate</div>
+      <div class="kpi-value" id="kpi_churn">—</div>
+      <div class="kpi-sub" id="kpi_churn_sub">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon">💰</div>
+      <div class="kpi-label">Total Revenue</div>
+      <div class="kpi-value" id="kpi_revenue">—</div>
+      <div class="kpi-sub" id="kpi_rev_sub">—</div>
+    </div>
+    <div class="kpi-card info">
+      <div class="kpi-icon">🎲</div>
+      <div class="kpi-label">Avg Stake</div>
+      <div class="kpi-value" id="kpi_stake">—</div>
+      <div class="kpi-sub">Per bet placed</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon">📈</div>
+      <div class="kpi-label">Promo ROI</div>
+      <div class="kpi-value" id="kpi_roi">—</div>
+      <div class="kpi-sub" id="kpi_roi_sub">—</div>
+    </div>
+    <div class="kpi-card warn">
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-label">Wagering Completion</div>
+      <div class="kpi-value" id="kpi_wagering">—</div>
+      <div class="kpi-sub" id="kpi_wag_sub">Bonus users only</div>
+    </div>
+  </div>
+
+  <!-- ROW 1 -->
+  <div class="grid-2">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">Registration vs Deactivation</div>
+        <div class="section-desc">Active users vs those who closed accounts.</div>
+      </div>
+      <div class="chart-body"><div id="chart_users" style="height:240px"></div></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">Churn Distribution</div>
+        <div class="section-desc">Users inactive for >90 days signal retention risk.</div>
+      </div>
+      <div class="chart-body"><div id="chart_churn" style="height:240px"></div></div>
+    </div>
+  </div>
+
+  <!-- ROW 2 -->
+  <div class="grid-2">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">Revenue per Game Category</div>
+        <div class="section-desc">Total GGR generated by each game type.</div>
+      </div>
+      <div class="chart-body"><div id="chart_revenue" style="height:240px"></div></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">Average Stake per User Segment</div>
+        <div class="section-desc">Mean bet amount by player value tier.</div>
+      </div>
+      <div class="chart-body"><div id="chart_stake" style="height:240px"></div></div>
+    </div>
+  </div>
+
+  <!-- ROW 3 -->
+  <div class="grid-2">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">Promotion ROI Distribution</div>
+        <div class="section-desc">ROI % per promotion — negative values = inefficient campaigns.</div>
+      </div>
+      <div class="chart-body"><div id="chart_roi" style="height:260px"></div></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">Time of Day User Activity</div>
+        <div class="section-desc">Hourly login patterns — optimise support & promo scheduling.</div>
+      </div>
+      <div class="chart-body"><div id="chart_hourly" style="height:260px"></div></div>
+    </div>
+  </div>
+
+  <!-- ROW 4 -->
+  <div class="grid-3">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">New vs Returning Customers</div>
+        <div class="section-desc">Registered in last 30 days vs existing users.</div>
+      </div>
+      <div class="chart-body"><div id="chart_bonus" style="height:220px"></div></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">High vs Low Value Players</div>
+        <div class="section-desc">Balance >R200 = high value; R1–50 = low value.</div>
+      </div>
+      <div class="chart-body"><div id="chart_value" style="height:220px"></div></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">Wagering Completion Rate</div>
+        <div class="section-desc">% of wagering requirements met by bonus users.</div>
+      </div>
+      <div class="chart-body"><div id="chart_wagering" style="height:220px"></div></div>
+    </div>
+  </div>
+
+  <!-- ROW 5 -->
+  <div class="grid-3">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">Duplicate Accounts Detected</div>
+        <div class="section-desc">Flagged accounts — high count signals fraud risk.</div>
+      </div>
+      <div class="chart-body"><div id="chart_duplicates" style="height:220px"></div></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">Mobile vs Desktop Users</div>
+        <div class="section-desc">Device preference guides UX investment decisions.</div>
+      </div>
+      <div class="chart-body"><div id="chart_device" style="height:220px"></div></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title">App vs Web Activity</div>
+        <div class="section-desc">Platform split — allocate dev resources accordingly.</div>
+      </div>
+      <div class="chart-body"><div id="chart_platform" style="height:220px"></div></div>
+    </div>
+  </div>
+
+  <!-- INSIGHTS -->
+  <div class="insights-card">
+    <div class="section-title">Key Insights & Recommendations</div>
+    <div class="insights-grid" id="insightsGrid"></div>
+  </div>
+
+</main>
+
+<footer class="footer" id="footerText">PLAYBET SA EXECUTIVE DASHBOARD &nbsp;|&nbsp; UPLOAD A CSV TO BEGIN</footer>
+<div class="toast" id="toast"></div>
+
+<!-- DRAG & DROP -->
+<script>
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+zone.addEventListener('drop', e => {
+  e.preventDefault(); zone.classList.remove('drag');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+</script>
+
+<script>
+// ============================================================
+// CONSTANTS
+// ============================================================
+const REPORT_DATE = new Date('2026-04-01');
+const GAMES = ['Aviator','Pragmatic Games','Evolution','Sportsbook','GamingHUB','BetGames'];
+const COLORS = {
+  green:'#27AE60', red:'#E74C3C', orange:'#F39C12',
+  blue:'#3498DB', accent:'#00d4a0', dark:'#2C3E50'
+};
+const DL = {
+  paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+  font:{ family:'DM Sans', color:'#6b7e99', size:11 },
+  margin:{ l:44, r:16, t:14, b:40 },
+  xaxis:{ gridcolor:'#1a2236', linecolor:'#1f2d45', tickfont:{color:'#6b7e99',size:10} },
+  yaxis:{ gridcolor:'#1a2236', linecolor:'#1f2d45', tickfont:{color:'#6b7e99',size:10} },
+  showlegend:false, hovermode:'closest'
+};
+const CFG = { displayModeBar:false, responsive:true };
+
+// ============================================================
+// FILE HANDLING
+// ============================================================
+function handleFile(file) {
+  if (!file) return;
+  showErr('');
+  Papa.parse(file, {
+    header: true, skipEmptyLines: true,
+    complete: res => {
+      if (!res.data.length) { showErr('CSV appears to be empty.'); return; }
+      const missing = validateCols(res.data[0]);
+      if (missing.length) {
+        showErr('Missing required columns: ' + missing.join(', ') + '. Check the CSV structure guide.');
+        return;
+      }
+      processData(res.data, file.name);
+    },
+    error: e => showErr('Parse error: ' + e.message)
+  });
+}
+
+function validateCols(row) {
+  const required = ['user_id','status','device_type','platform','last_login_hour',
+    'game_category','balance','avg_stake','revenue','bonus_type',
+    'bonus_wagered_pct','promo_roi_pct','is_duplicate','registration_date'];
+  return required.filter(c => !(c in row));
+}
+
+function clearData() {
+  document.getElementById('uploadPrompt').style.display = '';
+  document.getElementById('uploadSuccess').style.display = 'none';
+  document.getElementById('uploadZone').classList.remove('has-data');
+  document.getElementById('mainContent').style.display = 'none';
+  document.getElementById('csvInput').value = '';
+  document.getElementById('dateChip').textContent = '📅 Upload CSV to begin';
+  document.getElementById('footerText').textContent = 'PLAYBET SA EXECUTIVE DASHBOARD | UPLOAD A CSV TO BEGIN';
+  showErr('');
+}
+
+function showErr(msg) {
+  const b = document.getElementById('errBanner');
+  b.textContent = msg;
+  b.style.display = msg ? 'block' : 'none';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = '✓ ' + msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ============================================================
+// DATA PROCESSING
+// ============================================================
+function processData(rows, filename) {
+  // Parse types
+  rows.forEach(r => {
+    r.balance = parseFloat(r.balance) || 0;
+    r.avg_stake = parseFloat(r.avg_stake) || 0;
+    r.revenue = parseFloat(r.revenue) || 0;
+    r.total_bets = parseInt(r.total_bets) || 0;
+    r.total_wagered = parseFloat(r.total_wagered) || 0;
+    r.bonus_wagered_pct = parseFloat(r.bonus_wagered_pct) || 0;
+    r.promo_roi_pct = r.promo_roi_pct !== '' ? parseFloat(r.promo_roi_pct) : null;
+    r.last_login_hour = parseInt(r.last_login_hour);
+    r.is_duplicate = r.is_duplicate === 'true' || r.is_duplicate === 'True' || r.is_duplicate === '1';
+    r.registration_date = new Date(r.registration_date);
+  });
+
+  // ── AGGREGATIONS ──────────────────────────────────────────
+
+  const total      = rows.length;
+  const active     = rows.filter(r => r.status === 'active').length;
+  const churned    = rows.filter(r => r.status === 'churned').length;
+  const deactivated= rows.filter(r => r.status === 'deactivated').length;
+  const churnRate  = ((churned / total) * 100).toFixed(1);
+
+  const totalRevenue = rows.reduce((s,r) => s + r.revenue, 0);
+  const stakers      = rows.filter(r => r.avg_stake > 0);
+  const avgStake     = stakers.length ? stakers.reduce((s,r) => s + r.avg_stake, 0) / stakers.length : 0;
+
+  const roiVals  = rows.map(r => r.promo_roi_pct).filter(v => v !== null && !isNaN(v));
+  const avgROI   = roiVals.length ? roiVals.reduce((a,b)=>a+b,0)/roiVals.length : 0;
+
+  const bonusUsers = rows.filter(r => r.bonus_type && r.bonus_type !== '');
+  const avgWagering= bonusUsers.length ? bonusUsers.reduce((s,r) => s+r.bonus_wagered_pct, 0) / bonusUsers.length : 0;
+
+  // Revenue by game
+  const revByGame = {};
+  GAMES.forEach(g => revByGame[g] = 0);
+  rows.forEach(r => { if (revByGame.hasOwnProperty(r.game_category)) revByGame[r.game_category] += r.revenue; });
+
+  // Avg stake by balance segment
+  const segments = {
+    'Zero': rows.filter(r => r.balance === 0),
+    'Low (R1-50)': rows.filter(r => r.balance > 0 && r.balance <= 50),
+    'Medium (R51-200)': rows.filter(r => r.balance > 50 && r.balance <= 200),
+    'High (>R200)': rows.filter(r => r.balance > 200),
+  };
+  const segAvgStake = Object.entries(segments).map(([k,v]) =>
+    v.length ? v.reduce((s,r)=>s+r.avg_stake,0)/v.length : 0
+  );
+
+  // Hourly activity
+  const hourly = Array(24).fill(0);
+  rows.forEach(r => { if (!isNaN(r.last_login_hour)) hourly[r.last_login_hour]++; });
+
+  // New vs returning (30-day window)
+  const cutoff30 = new Date(REPORT_DATE.getTime() - 30*24*3600*1000);
+  const newCust     = rows.filter(r => r.registration_date >= cutoff30).length;
+  const returningCust = rows.filter(r => r.registration_date < cutoff30).length;
+
+  // High vs low value
+  const highVal = rows.filter(r => r.balance > 200).length;
+  const lowVal  = rows.filter(r => r.balance > 0 && r.balance <= 50).length;
+
+  // Duplicates
+  const dupes   = rows.filter(r => r.is_duplicate).length;
+  const uniques  = total - dupes;
+
+  // Device & platform
+  const mobile   = rows.filter(r => r.device_type === 'mobile').length;
+  const desktop  = rows.filter(r => r.device_type === 'desktop').length;
+  const appUsers = rows.filter(r => r.platform === 'app').length;
+  const webUsers = rows.filter(r => r.platform === 'web').length;
+
+  // Report date from data
+  const repDate = rows.find(r => r.report_date)?.report_date || '2026-04-01';
+  const repDateFmt = new Date(repDate).toLocaleDateString('en-ZA', {day:'2-digit',month:'long',year:'numeric'});
+
+  // ── UI UPDATES ───────────────────────────────────────────
+
+  // Upload zone
+  document.getElementById('uploadPrompt').style.display = 'none';
+  document.getElementById('uploadSuccess').style.display = 'block';
+  document.getElementById('uploadZone').classList.add('has-data');
+  document.getElementById('fileName').textContent = filename;
+  document.getElementById('fileStats').textContent = `${total} users · ${Object.keys(rows[0]).length} columns`;
+  document.getElementById('statusBadge').textContent = `${total} rows loaded`;
+  document.getElementById('dateChip').textContent = '📅 ' + repDateFmt;
+  document.getElementById('footerText').textContent =
+    `DATA AS OF ${repDateFmt.toUpperCase()}  |  SOURCE: PLAYBET SA DATABASE  |  ${total} USERS`;
+
+  // KPIs
+  document.getElementById('kpi_total').textContent     = total.toLocaleString();
+  document.getElementById('kpi_active_sub').textContent= `${active} active · ${deactivated} deactivated`;
+  document.getElementById('kpi_churn').textContent     = churnRate + '%';
+  document.getElementById('kpi_churn_sub').textContent = `${churned} of ${total} users`;
+  document.getElementById('kpi_revenue').textContent   = fmtCurrency(totalRevenue);
+  document.getElementById('kpi_rev_sub').textContent   = `Across ${GAMES.length} game types`;
+  document.getElementById('kpi_stake').textContent     = 'R' + avgStake.toFixed(2);
+  document.getElementById('kpi_roi').textContent       = avgROI.toFixed(1) + '%';
+  document.getElementById('kpi_roi_sub').textContent   = `${roiVals.length} promo data points`;
+  document.getElementById('kpi_wagering').textContent  = avgWagering.toFixed(1) + '%';
+  document.getElementById('kpi_wag_sub').textContent   = `${bonusUsers.length} bonus users`;
+
+  // Show dashboard
+  document.getElementById('mainContent').style.display = 'flex';
+
+  // ── CHARTS ───────────────────────────────────────────────
+  // 1. Users bar
+  Plotly.newPlot('chart_users', [{
+    type:'bar', x:['Active','Deactivated'], y:[active, deactivated],
+    marker:{color:[COLORS.green, COLORS.red], opacity:0.9},
+    text:[active, deactivated], textposition:'outside',
+    textfont:{color:'#e8edf5', size:13, family:'Syne'}
+  }], Object.assign({},DL,{margin:{l:30,r:16,t:20,b:40}}), CFG);
+
+  // 2. Churn pie
+  Plotly.newPlot('chart_churn', [{
+    type:'pie', hole:0.55,
+    labels:['Active','Churned','Deactivated'],
+    values:[active, churned, deactivated],
+    marker:{colors:[COLORS.green, COLORS.red, COLORS.orange]},
+    textinfo:'label+percent', textfont:{color:'#e8edf5', size:11}
+  }], Object.assign({},DL,{margin:{l:10,r:10,t:20,b:20}}), CFG);
+
+  // 3. Revenue by game
+  Plotly.newPlot('chart_revenue', [{
+    type:'bar', x:GAMES, y:GAMES.map(g=>revByGame[g]),
+    marker:{color:COLORS.orange, opacity:0.9},
+    text:GAMES.map(g=>'R'+Math.round(revByGame[g]).toLocaleString()),
+    textposition:'outside', textfont:{color:'#e8edf5', size:10}
+  }], Object.assign({},DL,{
+    margin:{l:50,r:16,t:20,b:60},
+    xaxis:{gridcolor:'#1a2236',linecolor:'#1f2d45',tickangle:-30,tickfont:{color:'#6b7e99',size:10}}
+  }), CFG);
+
+  // 4. Avg stake per segment
+  const segLabels = ['Zero','Low (R1-50)','Medium (R51-200)','High (>R200)'];
+  Plotly.newPlot('chart_stake', [{
+    type:'bar', x:segLabels, y:segAvgStake,
+    marker:{color:COLORS.blue, opacity:0.9},
+    text:segAvgStake.map(v=>'R'+v.toFixed(2)),
+    textposition:'outside', textfont:{color:'#e8edf5', size:10}
+  }], Object.assign({},DL,{
+    margin:{l:50,r:16,t:20,b:60},
+    xaxis:{gridcolor:'#1a2236',linecolor:'#1f2d45',tickangle:-20,tickfont:{color:'#6b7e99',size:9}}
+  }), CFG);
+
+  // 5. ROI box plot
+  Plotly.newPlot('chart_roi', [{
+    type:'box', y:roiVals, boxmean:'sd',
+    marker:{color:COLORS.dark, size:4},
+    line:{color:COLORS.accent},
+    fillcolor:'rgba(0,212,160,0.1)',
+    hovertemplate:'ROI: %{y:.1f}%<extra></extra>'
+  }], Object.assign({},DL,{
+    margin:{l:54,r:16,t:20,b:30},
+    yaxis:{gridcolor:'#1a2236',linecolor:'#1f2d45',
+      title:{text:'ROI (%)',font:{color:'#6b7e99',size:10}},tickfont:{color:'#6b7e99',size:10}}
+  }), CFG);
+
+  // 6. Hourly
+  Plotly.newPlot('chart_hourly', [{
+    type:'scatter', mode:'lines+markers',
+    x:Array.from({length:24},(_,i)=>i), y:hourly,
+    line:{color:COLORS.orange, width:2},
+    marker:{color:COLORS.accent, size:6},
+    fill:'tozeroy', fillcolor:'rgba(0,212,160,0.08)',
+    hovertemplate:'%{x}:00 — %{y} logins<extra></extra>'
+  }], Object.assign({},DL,{
+    margin:{l:40,r:16,t:20,b:40},
+    xaxis:{gridcolor:'#1a2236',linecolor:'#1f2d45',
+      tickvals:[0,4,8,12,16,20,23],ticktext:['0h','4h','8h','12h','16h','20h','23h'],
+      tickfont:{color:'#6b7e99',size:10}}
+  }), CFG);
+
+  // 7. New vs returning
+  Plotly.newPlot('chart_bonus', [{
+    type:'bar', x:['New (<30d)','Returning'],
+    y:[newCust, returningCust],
+    marker:{color:[COLORS.green, COLORS.blue], opacity:0.9},
+    text:[newCust, returningCust], textposition:'outside',
+    textfont:{color:'#e8edf5', size:12}
+  }], Object.assign({},DL,{margin:{l:30,r:16,t:20,b:40}}), CFG);
+
+  // 8. High vs low value
+  Plotly.newPlot('chart_value', [{
+    type:'pie', hole:0.55,
+    labels:['High (>R200)','Low (R1-50)'],
+    values:[highVal, lowVal],
+    marker:{colors:[COLORS.orange, COLORS.blue]},
+    textinfo:'label+percent', textfont:{color:'#e8edf5', size:10}
+  }], Object.assign({},DL,{margin:{l:10,r:10,t:20,b:20}}), CFG);
+
+  // 9. Wagering gauge
+  Plotly.newPlot('chart_wagering', [{
+    type:'indicator', mode:'gauge+number',
+    value: avgWagering,
+    number:{suffix:'%', font:{size:26, color:'#e8edf5', family:'Syne'}},
+    gauge:{
+      axis:{range:[0,100], tickcolor:'#6b7e99', tickfont:{color:'#6b7e99',size:9}},
+      bar:{color: avgWagering>=80?COLORS.green:avgWagering>=50?COLORS.orange:COLORS.red},
+      bgcolor:'#1a2236', bordercolor:'#1f2d45',
+      steps:[
+        {range:[0,50], color:'rgba(231,76,60,0.15)'},
+        {range:[50,80], color:'rgba(243,156,18,0.15)'},
+        {range:[80,100], color:'rgba(39,174,96,0.15)'}
+      ],
+      threshold:{line:{color:'#e8edf5',width:2}, thickness:0.75, value:80}
+    }
+  }], Object.assign({},DL,{margin:{l:20,r:20,t:30,b:20}}), CFG);
+
+  // 10. Duplicates
+  Plotly.newPlot('chart_duplicates', [{
+    type:'bar', x:['Unique','Flagged Duplicates'],
+    y:[uniques, dupes],
+    marker:{color:[COLORS.green, COLORS.red], opacity:0.9},
+    text:[uniques, dupes], textposition:'outside',
+    textfont:{color:'#e8edf5', size:12}
+  }], Object.assign({},DL,{margin:{l:30,r:16,t:20,b:40}}), CFG);
+
+  // 11. Device
+  Plotly.newPlot('chart_device', [{
+    type:'pie', hole:0.55,
+    labels:['Mobile','Desktop'],
+    values:[mobile, desktop],
+    marker:{colors:[COLORS.blue, COLORS.orange]},
+    textinfo:'label+percent', textfont:{color:'#e8edf5', size:10}
+  }], Object.assign({},DL,{margin:{l:10,r:10,t:20,b:20}}), CFG);
+
+  // 12. Platform
+  Plotly.newPlot('chart_platform', [{
+    type:'pie', hole:0.55,
+    labels:['App','Web'],
+    values:[appUsers, webUsers],
+    marker:{colors:[COLORS.green, COLORS.dark]},
+    textinfo:'label+percent', textfont:{color:'#e8edf5', size:10}
+  }], Object.assign({},DL,{margin:{l:10,r:10,t:20,b:20}}), CFG);
+
+  // ── INSIGHTS ──────────────────────────────────────────────
+  const highValPct  = ((highVal / total)*100).toFixed(1);
+  const dupePct     = ((dupes / total)*100).toFixed(1);
+  const mobilePct   = ((mobile / total)*100).toFixed(1);
+  const topGame     = GAMES.reduce((a,b) => revByGame[a]>=revByGame[b]?a:b);
+
+  const insights = [
+    +churnRate>20
+      ? {icon:'⚠️',title:'High churn rate',text:`${churnRate}% of users inactive >90 days. Launch immediate re-engagement campaigns.`}
+      : {icon:'✅',title:'Churn under control',text:`${churnRate}% churn. Continue monitoring with monthly cohort analysis.`},
+    deactivated===0
+      ? {icon:'✅',title:'Zero deactivations',text:'No voluntary account closures. UX and support performing well.'}
+      : {icon:'⚠️',title:'Deactivations detected',text:`${deactivated} accounts closed. Investigate off-boarding friction.`},
+    avgROI>100
+      ? {icon:'📈',title:'Strong promo ROI',text:`${avgROI.toFixed(1)}% average ROI. Scale the best-performing campaigns.`}
+      : {icon:'⚠️',title:'Promo ROI needs review',text:`${avgROI.toFixed(1)}% average ROI. Audit targeting and bonus structures.`},
+    +dupePct>2
+      ? {icon:'🔁',title:'Duplicate account risk',text:`${dupePct}% flagged duplicates. Tighten KYC and phone verification.`}
+      : {icon:'✅',title:'Low duplicate risk',text:`Only ${dupePct}% flagged. KYC controls are effective.`},
+    avgWagering<70
+      ? {icon:'⚠️',title:'Low wagering completion',text:`${avgWagering.toFixed(1)}% average. Simplify requirements and add progress indicators.`}
+      : {icon:'✅',title:'Wagering on track',text:`${avgWagering.toFixed(1)}% completion. Bonus requirements are well-calibrated.`},
+    +highValPct<10
+      ? {icon:'💎',title:'VIP segment opportunity',text:`Only ${highValPct}% high-value players. Build a VIP loyalty programme to grow this tier.`}
+      : {icon:'💎',title:'Healthy VIP segment',text:`${highValPct}% high-value players. Nurture with exclusive offers and account managers.`},
+    +mobilePct>60
+      ? {icon:'📱',title:'Mobile-first user base',text:`${mobilePct}% on mobile. Prioritise app performance and mobile-first promotions.`}
+      : {icon:'🖥️',title:'Balanced device split',text:`${mobilePct}% mobile, ${(100-+mobilePct).toFixed(1)}% desktop. Optimise both experiences equally.`},
+    {icon:'🏆',title:'Top revenue game',text:`${topGame} generates the most revenue (R${Math.round(revByGame[topGame]).toLocaleString()}). Increase marketing spend here.`}
+  ];
+
+  document.getElementById('insightsGrid').innerHTML = insights.map(i=>`
+    <div class="insight-item">
+      <span class="insight-icon">${i.icon}</span>
+      <div class="insight-text"><strong>${i.title}</strong>${i.text}</div>
+    </div>`).join('');
+
+  
+  showToast(`${total} users loaded · dashboard refreshed`);
+}
+
+// ── HELPERS ─────────────────────────────────────────────────
+function fmtCurrency(v) {
+  if (v >= 1_000_000) return 'R' + (v/1_000_000).toFixed(2) + 'M';
+  if (v >= 1_000)     return 'R' + (v/1_000).toFixed(1) + 'K';
+  return 'R' + v.toFixed(2);
+}
+</script>
+</body>
+</html>
