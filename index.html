@@ -1,3 +1,4 @@
+html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,9 +25,6 @@
     background: linear-gradient(135deg, #0f1420, #0a0e1a);
     border-bottom: 1px solid #1e2a3a;
     padding: 20px 32px;
-    position: sticky;
-    top: 0;
-    z-index: 100;
   }
 
   .logo h1 {
@@ -44,7 +42,6 @@
     margin-top: 4px;
   }
 
-  /* Branch Selector */
   .branch-selector {
     display: flex;
     gap: 12px;
@@ -75,7 +72,6 @@
     color: #0a0e1a;
   }
 
-  /* Upload Section */
   .upload-container {
     margin: 24px 32px;
     background: #0f1420;
@@ -124,13 +120,11 @@
     cursor: pointer;
   }
 
-  /* Main Content */
   .main {
     padding: 8px 32px 32px;
     display: none;
   }
 
-  /* KPI Grid */
   .kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -175,7 +169,6 @@
     margin-top: 8px;
   }
 
-  /* Charts */
   .grid-2 {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -208,7 +201,6 @@
     padding: 8px;
   }
 
-  /* Insights */
   .insights-card {
     background: linear-gradient(135deg, #0f1420, #0a1020);
     border: 1px solid #1e2a3a;
@@ -247,6 +239,7 @@
     opacity: 0;
     transition: all 0.3s;
     pointer-events: none;
+    z-index: 1000;
   }
 
   .toast.show {
@@ -278,7 +271,6 @@
   </div>
 </header>
 
-<!-- Branch Selector -->
 <div class="branch-selector" id="branchSelector">
   <button class="branch-btn active" data-branch="All">🏆 ALL BRANCHES</button>
   <button class="branch-btn" data-branch="Malvern">📍 Malvern</button>
@@ -287,10 +279,9 @@
   <button class="branch-btn" data-branch="Randburg">💎 Randburg</button>
 </div>
 
-<!-- Upload Section -->
 <div class="upload-container" id="uploadZone">
   <div class="upload-area" id="uploadArea">
-    <input type="file" accept=".csv" id="fileInput" style="display: none;" onchange="handleFile(this.files[0])"/>
+    <input type="file" accept=".csv" id="fileInput" style="display: none;" onchange="handleFileUpload(this.files[0])"/>
     <div id="uploadPrompt">
       <div style="font-size: 48px; margin-bottom: 12px;">📂</div>
       <div style="font-weight: 700; margin-bottom: 6px;">Upload Branch Data CSV</div>
@@ -310,7 +301,6 @@
 </div>
 
 <main class="main" id="mainContent">
-  <!-- KPI Row -->
   <div class="kpi-grid">
     <div class="kpi-card"><div class="kpi-label">👥 Total Users</div><div class="kpi-value" id="kpiUsers">—</div><div class="kpi-sub" id="kpiUsersSub"></div></div>
     <div class="kpi-card"><div class="kpi-label">🎫 Total Bet Slips</div><div class="kpi-value" id="kpiSlips">—</div><div class="kpi-sub" id="kpiSlipsSub"></div></div>
@@ -320,19 +310,17 @@
     <div class="kpi-card"><div class="kpi-label">📈 Slips per User</div><div class="kpi-value" id="kpiSlipsPerUser">—</div><div class="kpi-sub">Average engagement</div></div>
   </div>
 
-  <!-- Row 1: Time Analysis -->
   <div class="grid-2">
     <div class="chart-card">
-      <div class="chart-header">⏰ What times most tickets are played</div>
+      <div class="chart-header">⏰ Peak Hours - Most Tickets Played</div>
       <div class="chart-body"><div id="chartPeakHours" style="height: 320px;"></div></div>
     </div>
     <div class="chart-card">
-      <div class="chart-header">🌙 What times least tickets are played</div>
+      <div class="chart-header">🌙 Off-Peak Hours - Least Tickets Played</div>
       <div class="chart-body"><div id="chartOffPeakHours" style="height: 320px;"></div></div>
     </div>
   </div>
 
-  <!-- Row 2: Day of Month Analysis -->
   <div class="grid-2">
     <div class="chart-card">
       <div class="chart-header">📅 Days with Maximum Volume of Bets</div>
@@ -344,7 +332,6 @@
     </div>
   </div>
 
-  <!-- Row 3: Branch Comparison -->
   <div class="grid-2">
     <div class="chart-card">
       <div class="chart-header">🏆 Branch Comparison — Total Bet Slips</div>
@@ -356,23 +343,6 @@
     </div>
   </div>
 
-  <!-- Row 4: Additional Metrics -->
-  <div class="grid-3">
-    <div class="chart-card">
-      <div class="chart-header">🎯 GW Margin Distribution</div>
-      <div class="chart-body"><div id="chartMarginDist" style="height: 260px;"></div></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header">💰 Top 10 Users by Bet Slips</div>
-      <div class="chart-body"><div id="chartTopUsers" style="height: 260px;"></div></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header">⚠️ Unpaid Winnings by Branch</div>
-      <div class="chart-body"><div id="chartUnpaidByBranch" style="height: 260px;"></div></div>
-    </div>
-  </div>
-
-  <!-- Insights Panel -->
   <div class="insights-card">
     <div style="font-weight: 700; margin-bottom: 12px;">💡 Key Insights & Recommendations</div>
     <div class="insights-grid" id="insightsGrid"></div>
@@ -383,11 +353,12 @@
 <div class="toast" id="toast">✅ Data loaded successfully</div>
 
 <script>
+// Global variables
 let allData = [];
 let currentBranch = 'All';
-let branches = ['Malvern', 'Pretoria', 'White River', 'Randburg'];
+const branches = ['Malvern', 'Pretoria', 'White River', 'Randburg'];
 
-// Helper functions
+// Helper function
 function showToast(msg) {
   const toast = document.getElementById('toast');
   toast.textContent = msg;
@@ -403,7 +374,6 @@ function formatCurrency(num) {
   return 'R' + num.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
-// Parse datetime from "2026-04-30 14:59:07" format
 function parseDateTime(dateStr) {
   if (!dateStr) return null;
   try {
@@ -413,63 +383,42 @@ function parseDateTime(dateStr) {
   }
 }
 
-// Branch selector
+// Branch selector event listeners
 document.querySelectorAll('.branch-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', function() {
     document.querySelectorAll('.branch-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentBranch = btn.dataset.branch;
+    this.classList.add('active');
+    currentBranch = this.getAttribute('data-branch');
     if (allData.length > 0) {
       updateDashboard();
     }
   });
 });
 
-// Drag and drop
-const uploadArea = document.getElementById('uploadArea');
-uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('drag'); });
-uploadArea.addEventListener('dragleave', () => { uploadArea.classList.remove('drag'); });
-uploadArea.addEventListener('drop', (e) => {
-  e.preventDefault();
-  uploadArea.classList.remove('drag');
-  const file = e.dataTransfer.files[0];
-  if (file) handleFile(file);
-});
-
-function handleFile(file) {
+// File upload handler - FIXED FUNCTION NAME
+window.handleFileUpload = function(file) {
   if (!file) return;
   
   Papa.parse(file, {
     header: true,
     skipEmptyLines: true,
-    complete: (result) => {
+    complete: function(result) {
       if (result.data.length === 0) {
         alert('CSV file is empty');
         return;
       }
       processData(result.data, file.name);
     },
-    error: (err) => {
+    error: function(err) {
       alert('Error parsing CSV: ' + err.message);
     }
   });
 }
 
+// Process the data
 function processData(data, filename) {
-  // Parse and clean data
   allData = data.map(row => {
-    // Determine branch from data or assign based on some logic
     let branch = row.Branch || row.branch || '';
-    // If no branch column, try to infer from user or other fields
-    if (!branch) {
-      // Default assignment based on user name patterns (you can adjust)
-      const user = row.User || row.user || '';
-      if (user.includes('Malvern') || user.includes('MALVERN')) branch = 'Malvern';
-      else if (user.includes('Pretoria') || user.includes('PRETORIA')) branch = 'Pretoria';
-      else if (user.includes('White River') || user.includes('WHITE RIVER')) branch = 'White River';
-      else if (user.includes('Randburg') || user.includes('RANDBURG')) branch = 'Randburg';
-      else branch = branches[Math.floor(Math.random() * branches.length)]; // Fallback
-    }
     
     const lastSlip = parseDateTime(row['Last Slip Issued'] || row.last_slip_issued);
     
@@ -484,7 +433,7 @@ function processData(data, filename) {
       netWinMargin: parseFloat(row['Net Win Margin'] || row.net_win_margin || 0),
       branch: branch
     };
-  }).filter(row => row.betSlips > 0 || row.gwMargin !== 0);
+  }).filter(row => !isNaN(row.betSlips));
   
   // Update UI
   document.getElementById('uploadPrompt').style.display = 'none';
@@ -495,19 +444,32 @@ function processData(data, filename) {
   document.getElementById('mainContent').style.display = 'block';
   
   updateDashboard();
-  showToast(`Loaded ${allData.length} users from ${branches.length} branches`);
+  showToast(`Loaded ${allData.length} users`);
 }
 
+// Clear data function
+window.clearData = function() {
+  allData = [];
+  document.getElementById('uploadPrompt').style.display = '';
+  document.getElementById('uploadSuccess').style.display = 'none';
+  document.getElementById('mainContent').style.display = 'none';
+  document.getElementById('footerText').innerHTML = 'Upload CSV with branch data to begin analysis';
+  document.getElementById('fileInput').value = '';
+  showToast('Data cleared');
+}
+
+// Get filtered data by branch
 function getFilteredData() {
   if (currentBranch === 'All') return allData;
   return allData.filter(d => d.branch === currentBranch);
 }
 
+// Update all charts
 function updateDashboard() {
   const data = getFilteredData();
-  const branchLabel = currentBranch === 'All' ? 'All Branches' : currentBranch;
   
-  // Calculate KPIs
+  if (data.length === 0) return;
+  
   const totalUsers = data.length;
   const totalSlips = data.reduce((sum, d) => sum + d.betSlips, 0);
   const avgGwMargin = data.reduce((sum, d) => sum + d.gwMargin, 0) / totalUsers;
@@ -515,9 +477,8 @@ function updateDashboard() {
   const totalUnpaid = data.reduce((sum, d) => sum + d.winningsUnpaid, 0);
   const avgSlipsPerUser = totalSlips / totalUsers;
   
-  // Update KPIs
   document.getElementById('kpiUsers').textContent = formatNumber(totalUsers);
-  document.getElementById('kpiUsersSub').textContent = branchLabel;
+  document.getElementById('kpiUsersSub').textContent = currentBranch === 'All' ? 'All Branches' : currentBranch;
   document.getElementById('kpiSlips').textContent = formatNumber(totalSlips);
   document.getElementById('kpiSlipsSub').textContent = `Across ${totalUsers} users`;
   document.getElementById('kpiMargin').textContent = avgGwMargin.toFixed(2) + '%';
@@ -525,7 +486,7 @@ function updateDashboard() {
   document.getElementById('kpiUnpaid').textContent = formatCurrency(totalUnpaid);
   document.getElementById('kpiSlipsPerUser').textContent = avgSlipsPerUser.toFixed(1);
   
-  // 1. Peak hours (most tickets played)
+  // Hour analysis
   const hourVolume = Array(24).fill(0);
   data.forEach(d => {
     if (d.lastSlipHour !== null) {
@@ -539,7 +500,6 @@ function updateDashboard() {
     return `${hour}${period}`;
   });
   
-  // Find top 5 peak hours
   const peakHours = hourVolume.map((vol, hour) => ({hour, vol})).sort((a,b) => b.vol - a.vol).slice(0, 5);
   const offPeakHours = hourVolume.map((vol, hour) => ({hour, vol})).filter(h => h.vol > 0).sort((a,b) => a.vol - b.vol).slice(0, 5);
   
@@ -549,8 +509,7 @@ function updateDashboard() {
     y: peakHours.map(h => h.vol),
     marker: { color: '#27AE60', opacity: 0.8 },
     text: peakHours.map(h => formatNumber(h.vol)),
-    textposition: 'outside',
-    textfont: { color: '#e8edf5', size: 10 }
+    textposition: 'outside'
   }], {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
@@ -565,8 +524,7 @@ function updateDashboard() {
     y: offPeakHours.map(h => h.vol),
     marker: { color: '#E74C3C', opacity: 0.8 },
     text: offPeakHours.map(h => formatNumber(h.vol)),
-    textposition: 'outside',
-    textfont: { color: '#e8edf5', size: 10 }
+    textposition: 'outside'
   }], {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
@@ -575,7 +533,7 @@ function updateDashboard() {
     yaxis: { title: 'Bet Slips Volume', gridcolor: '#1e2a3a' }
   });
   
-  // 2. Day of month analysis
+  // Day of month analysis
   const dayVolume = Array(32).fill(0);
   data.forEach(d => {
     if (d.lastSlipDay !== null && d.lastSlipDay >= 1 && d.lastSlipDay <= 31) {
@@ -583,11 +541,8 @@ function updateDashboard() {
     }
   });
   
-  const dayLabels = Array.from({length: 31}, (_, i) => i + 1);
-  const dayVolumes = dayVolume.slice(1, 32);
-  
-  const topDays = dayVolumes.map((vol, idx) => ({day: idx+1, vol})).sort((a,b) => b.vol - a.vol).slice(0, 5);
-  const lowDays = dayVolumes.map((vol, idx) => ({day: idx+1, vol})).filter(d => d.vol > 0).sort((a,b) => a.vol - b.vol).slice(0, 5);
+  const topDays = dayVolume.map((vol, idx) => ({day: idx, vol})).filter(d => d.day >= 1 && d.day <= 31).sort((a,b) => b.vol - a.vol).slice(0, 5);
+  const lowDays = dayVolume.map((vol, idx) => ({day: idx, vol})).filter(d => d.day >= 1 && d.vol > 0).sort((a,b) => a.vol - b.vol).slice(0, 5);
   
   Plotly.newPlot('chartPeakDays', [{
     type: 'bar',
@@ -595,13 +550,12 @@ function updateDashboard() {
     y: topDays.map(d => d.vol),
     marker: { color: '#f59e0b', opacity: 0.8 },
     text: topDays.map(d => formatNumber(d.vol)),
-    textposition: 'outside',
-    textfont: { color: '#e8edf5', size: 10 }
+    textposition: 'outside'
   }], {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
     font: { color: '#5a6e8a' },
-    xaxis: { title: 'Day of Month', tickvals: topDays.map(d => d.day), gridcolor: '#1e2a3a' },
+    xaxis: { title: 'Day of Month', gridcolor: '#1e2a3a' },
     yaxis: { title: 'Bet Slips Volume', gridcolor: '#1e2a3a' }
   });
   
@@ -611,28 +565,23 @@ function updateDashboard() {
     y: lowDays.map(d => d.vol),
     marker: { color: '#E74C3C', opacity: 0.8 },
     text: lowDays.map(d => formatNumber(d.vol)),
-    textposition: 'outside',
-    textfont: { color: '#e8edf5', size: 10 }
+    textposition: 'outside'
   }], {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
     font: { color: '#5a6e8a' },
-    xaxis: { title: 'Day of Month', tickvals: lowDays.map(d => d.day), gridcolor: '#1e2a3a' },
+    xaxis: { title: 'Day of Month', gridcolor: '#1e2a3a' },
     yaxis: { title: 'Bet Slips Volume', gridcolor: '#1e2a3a' }
   });
   
-  // 3. Branch comparison
+  // Branch comparison
   const branchSlips = {};
   const branchMargin = {};
-  const branchUnpaid = {};
-  const branchUsers = {};
   
   branches.forEach(b => {
     const branchData = allData.filter(d => d.branch === b);
     branchSlips[b] = branchData.reduce((sum, d) => sum + d.betSlips, 0);
     branchMargin[b] = branchData.reduce((sum, d) => sum + d.netWinMargin, 0) / (branchData.length || 1);
-    branchUnpaid[b] = branchData.reduce((sum, d) => sum + d.winningsUnpaid, 0);
-    branchUsers[b] = branchData.length;
   });
   
   Plotly.newPlot('chartBranchSlips', [{
@@ -641,8 +590,7 @@ function updateDashboard() {
     y: branches.map(b => branchSlips[b]),
     marker: { color: '#00d4a0', opacity: 0.8 },
     text: branches.map(b => formatNumber(branchSlips[b])),
-    textposition: 'outside',
-    textfont: { color: '#e8edf5', size: 11 }
+    textposition: 'outside'
   }], {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
@@ -657,8 +605,7 @@ function updateDashboard() {
     y: branches.map(b => branchMargin[b]),
     marker: { color: branches.map(b => branchMargin[b] > 0 ? '#27AE60' : '#E74C3C'), opacity: 0.8 },
     text: branches.map(b => branchMargin[b].toFixed(2) + '%'),
-    textposition: 'outside',
-    textfont: { color: '#e8edf5', size: 11 }
+    textposition: 'outside'
   }], {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
@@ -667,75 +614,15 @@ function updateDashboard() {
     yaxis: { title: 'Net Win Margin (%)', gridcolor: '#1e2a3a' }
   });
   
-  // 4. GW Margin Distribution
-  const margins = data.map(d => d.gwMargin).filter(m => m !== null && !isNaN(m));
-  Plotly.newPlot('chartMarginDist', [{
-    type: 'histogram',
-    x: margins,
-    nbinsx: 30,
-    marker: { color: '#3498DB', opacity: 0.7 },
-    hovertemplate: 'Margin: %{x:.1f}%<br>Count: %{y}<extra></extra>'
-  }], {
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { color: '#5a6e8a' },
-    xaxis: { title: 'GW Margin (%)', gridcolor: '#1e2a3a' },
-    yaxis: { title: 'Number of Users', gridcolor: '#1e2a3a' }
-  });
-  
-  // 5. Top 10 Users
-  const topUsers = [...data].sort((a,b) => b.betSlips - a.betSlips).slice(0, 10);
-  Plotly.newPlot('chartTopUsers', [{
-    type: 'bar',
-    x: topUsers.map(u => u.user.length > 15 ? u.user.substring(0, 12) + '...' : u.user),
-    y: topUsers.map(u => u.betSlips),
-    orientation: 'h',
-    marker: { color: '#f59e0b', opacity: 0.8 },
-    text: topUsers.map(u => formatNumber(u.betSlips)),
-    textposition: 'outside',
-    textfont: { color: '#e8edf5', size: 9 }
-  }], {
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { color: '#5a6e8a' },
-    xaxis: { title: 'Bet Slips', gridcolor: '#1e2a3a' },
-    yaxis: { title: 'User', automargin: true },
-    margin: { l: 100, r: 20, t: 20, b: 40 }
-  });
-  
-  // 6. Unpaid Winnings by Branch
-  Plotly.newPlot('chartUnpaidByBranch', [{
-    type: 'bar',
-    x: branches,
-    y: branches.map(b => branchUnpaid[b]),
-    marker: { color: '#E74C3C', opacity: 0.8 },
-    text: branches.map(b => formatCurrency(branchUnpaid[b])),
-    textposition: 'outside',
-    textfont: { color: '#e8edf5', size: 10 }
-  }], {
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { color: '#5a6e8a' },
-    xaxis: { title: 'Branch', gridcolor: '#1e2a3a' },
-    yaxis: { title: 'Unpaid Winnings (R)', gridcolor: '#1e2a3a' }
-  });
-  
-  // Generate Insights
+  // Insights
   const bestBranch = Object.entries(branchSlips).sort((a,b) => b[1] - a[1])[0];
-  const worstBranch = Object.entries(branchSlips).sort((a,b) => a[1] - b[1])[0];
   const highestMarginBranch = Object.entries(branchMargin).sort((a,b) => b[1] - a[1])[0];
   const peakHourInfo = peakHours[0];
-  const offPeakHourInfo = offPeakHours[0];
-  const peakDayInfo = topDays[0];
   
   const insights = [
     { icon: '🏆', title: 'Top Performing Branch', text: `${bestBranch[0]} has the highest volume with ${formatNumber(bestBranch[1])} total bet slips.` },
-    { icon: '⚠️', title: 'Branch Needing Attention', text: `${worstBranch[0]} has the lowest volume (${formatNumber(worstBranch[1])} slips). Investigate operational issues.` },
     { icon: '💰', title: 'Most Profitable Branch', text: `${highestMarginBranch[0]} has the highest net win margin at ${highestMarginBranch[1].toFixed(2)}%.` },
-    { icon: '⏰', title: 'Peak Betting Time', text: `${hourLabels[peakHours[0].hour]} (${formatNumber(peakHours[0].vol)} slips) is when most tickets are played. Schedule promotions here.` },
-    { icon: '🌙', title: 'Lowest Activity Time', text: `${hourLabels[offPeakHours[0].hour]} has only ${formatNumber(offPeakHours[0].vol)} slips. Consider reduced staffing.` },
-    { icon: '📅', title: 'Best Day of Month', text: `Day ${peakDayInfo.day} sees maximum volume (${formatNumber(peakDayInfo.vol)} slips). Plan special events.` },
-    { icon: '💎', title: 'Top Customer', text: `${topUsers[0]?.user || 'N/A'} leads with ${formatNumber(topUsers[0]?.betSlips || 0)} bet slips. Consider VIP treatment.` },
+    { icon: '⏰', title: 'Peak Betting Time', text: `${hourLabels[peakHours[0]?.hour || 0]} (${formatNumber(peakHours[0]?.vol || 0)} slips) is when most tickets are played.` },
     { icon: '📊', title: 'Margin Insight', text: `Average GW margin is ${avgGwMargin.toFixed(2)}%. ${avgGwMargin > 15 ? 'Healthy profitability.' : 'Review pricing or bonus structures.'}` }
   ];
   
@@ -743,4 +630,25 @@ function updateDashboard() {
     <div class="insight-item">
       <span style="font-size: 18px;">${i.icon}</span>
       <div><strong>${i.title}</strong><br>${i.text}</div>
-    </
+    </div>
+  `).join('');
+}
+
+// Drag and drop handlers
+const uploadArea = document.getElementById('uploadArea');
+uploadArea.addEventListener('dragover', (e) => { 
+  e.preventDefault(); 
+  uploadArea.classList.add('drag'); 
+});
+uploadArea.addEventListener('dragleave', () => { 
+  uploadArea.classList.remove('drag'); 
+});
+uploadArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) window.handleFileUpload(file);
+});
+</script>
+</body>
+</html>
