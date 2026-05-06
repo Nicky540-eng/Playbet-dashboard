@@ -99,10 +99,17 @@
   </div>
 
   <div class="kpi-bar">
+    <div class="kpi-card"><div class="kpi-label">Gross Gaming Rev (GGR)</div><div class="kpi-value" id="kpi_ggr">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">Net Gaming Rev (NGR)</div><div class="kpi-value" id="kpi_ngr">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">Branch Profit Margin</div><div class="kpi-value" id="kpi_margin">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">Revenue / Employee</div><div class="kpi-value" id="kpi_rev_per_emp">—</div></div>
+  </div>
+  
+  <div class="kpi-bar" style="margin-top:12px">
     <div class="kpi-card"><div class="kpi-label">Total Bet Slips</div><div class="kpi-value" id="kpi_slips">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Avg GW Margin</div><div class="kpi-value" id="kpi_gw">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Avg Net Win Margin</div><div class="kpi-value" id="kpi_net">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Unpaid Liability</div><div class="kpi-value" id="kpi_unpaid">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">Rev / Operating Hour</div><div class="kpi-value" id="kpi_rev_per_hour">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">Peak Activity Hour</div><div class="kpi-value" id="kpi_peak_hour">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">Max Volume Day</div><div class="kpi-value" id="kpi_peak_day">—</div></div>
   </div>
 
   <div class="grid-2">
@@ -172,7 +179,7 @@ function processRetailData(data) {
     }
   });
 
-  // Switch to default branch
+  // Switch to default branch view
   switchBranch('Malvern');
   document.getElementById('mainContent').style.display = 'block';
   document.getElementById('uploadZone').style.display = 'none';
@@ -196,21 +203,56 @@ function switchBranch(branchName) {
   const slips = bData.reduce((s, r) => s + (r['Bet Slips'] || 0), 0);
   const avgGw = bData.length ? bData.reduce((s, r) => s + (r['GW Margin %'] || 0), 0) / bData.length : 0;
   const avgNet = bData.length ? bData.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / bData.length : 0;
-  const unpaid = bData.reduce((s, r) => {
-    let val = r['Winnings - Unpaid'];
-    if (typeof val === 'string') {
-      val = val.replace(/,/g, '');
-    }
-    return s + (parseFloat(val) || 0);
+
+  // Compute financial metrics (assumed avg bet variable used for projection if not specified in base units)
+  const assumedAvgBet = 20; 
+  const ggrValue = bData.reduce((s, r) => {
+    const gw = r['GW Margin %'] || 0;
+    const slips = r['Bet Slips'] || 0;
+    return s + (slips * assumedAvgBet * (gw / 100));
   }, 0);
 
-  // Display metrics in KPI Cards
-  document.getElementById('kpi_slips').textContent = slips.toLocaleString();
-  document.getElementById('kpi_gw').textContent = avgGw.toFixed(2) + '%';
-  document.getElementById('kpi_net').textContent = avgNet.toFixed(2) + '%';
-  document.getElementById('kpi_unpaid').textContent = 'R' + Math.abs(unpaid).toLocaleString();
+  const ngrValue = bData.reduce((s, r) => {
+    const net = r['Net Win Margin'] || 0;
+    const slips = r['Bet Slips'] || 0;
+    return s + (slips * assumedAvgBet * (net / 100));
+  }, 0);
 
-  // Plotly chart layouts
+  const profitMargin = avgNet;
+
+  // Staff analysis
+  const uniqueUsers = new Set(bData.map(r => r['User'])).size || 1;
+  const revPerEmp = ngrValue / uniqueUsers;
+  
+  // Operating parameters
+  const operatingHours = 12; // 12hr operational day
+  const revPerHour = ngrValue / (operatingHours * 30 * 4); // 4 Months
+
+  // Hourly density distributions
+  const hours = Array.from({length: 24}, (_, i) => i);
+  const hourlyCounts = hours.map(h => bData.filter(d => d.Hour === h).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
+  
+  const maxHour = hourlyCounts.indexOf(Math.max(...hourlyCounts));
+  const minHour = hourlyCounts.indexOf(Math.min(...hourlyCounts.filter(h => h > 0))) !== -1 ? hourlyCounts.indexOf(Math.min(...hourlyCounts.filter(h => h > 0))) : maxHour;
+
+  // Daily volume trends
+  const days = Array.from({length: 31}, (_, i) => i + 1);
+  const dailyCounts = days.map(day => bData.filter(d => d.Day === day).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
+
+  const maxDay = dailyCounts.indexOf(Math.max(...dailyCounts)) + 1;
+  const minDay = dailyCounts.indexOf(Math.min(...dailyCounts.filter(d => d > 0))) + 1;
+
+  // Update DOMs
+  document.getElementById('kpi_ggr').textContent = 'R' + ggrValue.toFixed(2);
+  document.getElementById('kpi_ngr').textContent = 'R' + ngrValue.toFixed(2);
+  document.getElementById('kpi_margin').textContent = profitMargin.toFixed(2) + '%';
+  document.getElementById('kpi_rev_per_emp').textContent = 'R' + revPerEmp.toFixed(2);
+  document.getElementById('kpi_slips').textContent = slips.toLocaleString();
+  document.getElementById('kpi_rev_per_hour').textContent = 'R' + revPerHour.toFixed(2);
+  document.getElementById('kpi_peak_hour').textContent = maxHour + ':00';
+  document.getElementById('kpi_peak_day').textContent = 'Day ' + maxDay;
+
+  // Chart layouts
   const layout = { paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', font:{color:'#6b7e99', size:10}, margin:{t:30,l:40,r:20,b:40} };
 
   const allStats = BRANCHES.map(b => {
@@ -222,7 +264,7 @@ function switchBranch(branchName) {
     };
   });
 
-  // Render Charts
+  // Render Layouts
   Plotly.newPlot('chart_volume', [{
     type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.slips),
     marker: { color: COLORS }
@@ -232,13 +274,6 @@ function switchBranch(branchName) {
     type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.net),
     marker: { color: COLORS }
   }], layout);
-
-  // Time arrays (Hourly and Daily)
-  const hours = Array.from({length: 24}, (_, i) => i);
-  const hourlyCounts = hours.map(h => bData.filter(d => d.Hour === h).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
-
-  const days = Array.from({length: 31}, (_, i) => i + 1);
-  const dailyCounts = days.map(day => bData.filter(d => d.Day === day).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
 
   Plotly.newPlot('chart_hourly', [{
     x: hours, y: hourlyCounts, type: 'scatter', mode: 'lines+markers',
@@ -250,12 +285,12 @@ function switchBranch(branchName) {
     marker: { color: '#f59e0b' }
   }], layout);
 
-  // Update Insights based on currently selected Branch
+  // Insight Grid Updates
   document.getElementById('insightsGrid').innerHTML = `
-    <div class="insight-item"><strong>🏆 Branch Stats</strong> ${branchName} generated ${slips.toLocaleString()} slips overall.</div>
-    <div class="insight-item"><strong>📊 Model View</strong> Viewing performance results for <strong>${branchName}</strong>.</div>
-    <div class="insight-item"><strong>⏰ Peak Activity</strong> Hourly transactions peak uniformly at 18:00 (6 PM).</div>
-    <div class="insight-item"><strong>📅 Payday Trend</strong> Maximum volume of bets corresponds with month-end dates (30th).</div>
+    <div class="insight-item"><strong>🏆 Branch Stats</strong> ${branchName} processed ${slips.toLocaleString()} bet slips.</div>
+    <div class="insight-item"><strong>⏱️ Peak / Quiet Hours</strong> Peak betting is at ${maxHour}:00 and lowest volume is at ${minHour}:00.</div>
+    <div class="insight-item"><strong>📊 Volume Trends</strong> Maximum volume occurs on Day ${maxDay} and lowest on Day ${minDay}.</div>
+    <div class="insight-item"><strong>ℹ️ Active Employees</strong> ${uniqueUsers} employees handling slips for this branch.</div>
   `;
 }
 </script>
