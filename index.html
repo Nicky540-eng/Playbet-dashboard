@@ -83,7 +83,7 @@
 </header>
 
 <div class="upload-zone" id="uploadZone">
-  <input type="file" accept=".csv" class="upload-input" onchange="handleFile(this.files[0])"/>
+  <input type="file" id="csvFileInput" accept=".csv" class="upload-input"/>
   <div id="uploadPrompt">
     <div style="font-size:30px">📊</div>
     <div style="font-family:'Syne'; font-weight:700">Upload Slip summary jan-april 2026.csv</div>
@@ -103,12 +103,12 @@
     <div class="kpi-card"><div class="kpi-label">Gross Gaming Rev (GGR)</div><div class="kpi-value" id="kpi_ggr">—</div></div>
     <div class="kpi-card"><div class="kpi-label">Net Gaming Rev (NGR)</div><div class="kpi-value" id="kpi_ngr">—</div></div>
     <div class="kpi-card"><div class="kpi-label">Branch Profit Margin</div><div class="kpi-value" id="kpi_margin">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Revenue / Employee</div><div class="kpi-value" id="kpi_rev_per_emp">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">Cashier Gross Profit</div><div class="kpi-value" id="kpi_cashier_profit">—</div></div>
   </div>
   
   <div class="kpi-bar" style="margin-top:12px">
     <div class="kpi-card"><div class="kpi-label">Total Bet Slips</div><div class="kpi-value" id="kpi_slips">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Rev / Operating Hour</div><div class="kpi-value" id="kpi_rev_per_hour">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">Rev / Employee</div><div class="kpi-value" id="kpi_rev_per_emp">—</div></div>
     <div class="kpi-card"><div class="kpi-label">Peak Activity Hour</div><div class="kpi-value" id="kpi_peak_hour">—</div></div>
     <div class="kpi-card"><div class="kpi-label">Max Volume Day</div><div class="kpi-value" id="kpi_peak_day">—</div></div>
   </div>
@@ -123,14 +123,14 @@
       <div id="chart_margins" style="height:260px"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Liability Proportion Pie</div></div>
-      <div id="chart_liability_pie" style="height:260px"></div>
+      <div class="chart-header"><div class="section-title">Branch Liabilities (Absolute)</div></div>
+      <div id="chart_liability_bar" style="height:260px"></div>
     </div>
   </div>
 
   <div class="grid-2" style="margin-top: 16px;">
     <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Hourly Betting Density (Linegraph)</div></div>
+      <div class="chart-header"><div class="section-title">Hourly Betting Density</div></div>
       <div id="chart_hourly" style="height:280px"></div>
     </div>
     <div class="chart-card">
@@ -141,7 +141,7 @@
 
   <div class="grid-2" style="margin-top: 16px;">
     <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Slip Distribution Spread (Boxplot)</div></div>
+      <div class="chart-header"><div class="section-title">Slip Distribution Spread</div></div>
       <div id="chart_box" style="height:260px"></div>
     </div>
     <div class="chart-card">
@@ -161,6 +161,16 @@ let allData = [];
 const BRANCHES = ['Malvern', 'Pretoria', 'Randburg', 'White River'];
 const COLORS = ['#00d4a0', '#3498DB', '#f59e0b', '#E74C3C'];
 
+document.addEventListener('DOMContentLoaded', () => {
+  const fileInput = document.getElementById('csvFileInput');
+  if (fileInput) {
+    fileInput.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) handleFile(file);
+    });
+  }
+});
+
 function handleFile(file) {
   Papa.parse(file, {
     header: true,
@@ -175,14 +185,14 @@ function handleFile(file) {
 
 function processRetailData(data) {
   data.forEach((row, idx) => {
-    const user = String(row.User).toLowerCase();
+    const user = String(row.User || '').toLowerCase();
     if (user.includes('malvern')) row.Branch = 'Malvern';
     else if (user.includes('pretoria')) row.Branch = 'Pretoria';
     else if (user.includes('randburg')) row.Branch = 'Randburg';
     else if (user.includes('white river')) row.Branch = 'White River';
     else row.Branch = BRANCHES[idx % 4];
 
-    const slipTime = String(row['Last Slip Issued']);
+    const slipTime = String(row['Last Slip Issued'] || '');
     if (slipTime && slipTime.includes(' ')) {
       const parts = slipTime.split(' ');
       const timeParts = parts[1].split(':');
@@ -193,7 +203,6 @@ function processRetailData(data) {
       row.Day = 1;
     }
     
-    // Clean string formats safely
     let unpaidStr = String(row['Winnings - Unpaid'] || '0').replace(/,/g, '');
     row.UnpaidNum = parseFloat(unpaidStr) || 0;
   });
@@ -216,12 +225,11 @@ function switchBranch(branchName) {
 
   const bData = allData.filter(d => d.Branch === branchName);
 
-  // Compute metrics
   const slips = bData.reduce((s, r) => s + (r['Bet Slips'] || 0), 0);
   const avgGw = bData.length ? bData.reduce((s, r) => s + (r['GW Margin %'] || 0), 0) / bData.length : 0;
   const avgNet = bData.length ? bData.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / bData.length : 0;
 
-  const assumedAvgBet = 20; 
+  const assumedAvgBet = 20;
   const ggrValue = bData.reduce((s, r) => {
     const gw = r['GW Margin %'] || 0;
     const slips = r['Bet Slips'] || 0;
@@ -238,9 +246,7 @@ function switchBranch(branchName) {
 
   const uniqueUsers = new Set(bData.map(r => r['User'])).size || 1;
   const revPerEmp = ngrValue / uniqueUsers;
-  
-  const operatingHours = 12; 
-  const revPerHour = ngrValue / (operatingHours * 30 * 4);
+  const cashierGrossProfit = ggrValue / uniqueUsers;
 
   const hours = Array.from({length: 24}, (_, i) => i);
   const hourlyCounts = hours.map(h => bData.filter(d => d.Hour === h).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
@@ -254,13 +260,12 @@ function switchBranch(branchName) {
   const maxDay = dailyCounts.indexOf(Math.max(...dailyCounts)) + 1;
   const minDay = dailyCounts.indexOf(Math.min(...dailyCounts.filter(d => d > 0))) + 1;
 
-  // Display DOM Update
   document.getElementById('kpi_ggr').textContent = 'R' + ggrValue.toFixed(2);
   document.getElementById('kpi_ngr').textContent = 'R' + ngrValue.toFixed(2);
   document.getElementById('kpi_margin').textContent = profitMargin.toFixed(2) + '%';
-  document.getElementById('kpi_rev_per_emp').textContent = 'R' + revPerEmp.toFixed(2);
+  document.getElementById('kpi_cashier_profit').textContent = 'R' + cashierGrossProfit.toFixed(2);
   document.getElementById('kpi_slips').textContent = slips.toLocaleString();
-  document.getElementById('kpi_rev_per_hour').textContent = 'R' + revPerHour.toFixed(2);
+  document.getElementById('kpi_rev_per_emp').textContent = 'R' + revPerEmp.toFixed(2);
   document.getElementById('kpi_peak_hour').textContent = maxHour + ':00';
   document.getElementById('kpi_peak_day').textContent = 'Day ' + maxDay;
 
@@ -272,11 +277,10 @@ function switchBranch(branchName) {
       name: b,
       slips: d.reduce((s, r) => s + (r['Bet Slips'] || 0), 0),
       net: d.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / (d.length || 1),
-      unpaid: d.reduce((s, r) => s + (r.UnpaidNum || 0), 0)
+      unpaid: d.reduce((s, r) => s + (Math.abs(r.UnpaidNum) || 0), 0)
     };
   });
 
-  // Render Charts
   Plotly.newPlot('chart_volume', [{
     type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.slips),
     marker: { color: COLORS }
@@ -287,10 +291,10 @@ function switchBranch(branchName) {
     marker: { color: COLORS }
   }], layout);
 
-  Plotly.newPlot('chart_liability_pie', [{
-    type: 'pie', hole: 0.55, labels: allStats.map(s => s.name), values: allStats.map(s => s.unpaid),
-    marker: { color: COLORS }, textinfo: 'label+percent'
-  }], Object.assign({}, layout, {margin:{l:10,r:10,t:20,b:20}}));
+  Plotly.newPlot('chart_liability_bar', [{
+    type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.unpaid),
+    marker: { color: COLORS }
+  }], layout);
 
   Plotly.newPlot('chart_hourly', [{
     x: hours, y: hourlyCounts, type: 'scatter', mode: 'lines+markers',
