@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
@@ -48,6 +48,7 @@
 
   /* GRIDS */
   .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
   .chart-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
   .chart-header{padding:14px 20px;border-bottom:1px solid var(--border)}
   .section-title{font-family:'Syne',sans-serif;font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px}
@@ -112,25 +113,40 @@
     <div class="kpi-card"><div class="kpi-label">Max Volume Day</div><div class="kpi-value" id="kpi_peak_day">—</div></div>
   </div>
 
-  <div class="grid-2">
+  <div class="grid-3" style="margin-top: 16px;">
     <div class="chart-card">
       <div class="chart-header"><div class="section-title">Volume by Branch</div></div>
-      <div id="chart_volume" style="height:300px"></div>
+      <div id="chart_volume" style="height:260px"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Net Win Margin % per Branch</div></div>
-      <div id="chart_margins" style="height:300px"></div>
+      <div class="chart-header"><div class="section-title">Net Win Margin Comparison</div></div>
+      <div id="chart_margins" style="height:260px"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header"><div class="section-title">Liability Proportion Pie</div></div>
+      <div id="chart_liability_pie" style="height:260px"></div>
     </div>
   </div>
 
-  <div class="grid-2">
+  <div class="grid-2" style="margin-top: 16px;">
     <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Hourly Betting Density (All Branches)</div></div>
-      <div id="chart_hourly" style="height:300px"></div>
+      <div class="chart-header"><div class="section-title">Hourly Betting Density (Linegraph)</div></div>
+      <div id="chart_hourly" style="height:280px"></div>
     </div>
     <div class="chart-card">
       <div class="chart-header"><div class="section-title">Daily Volume Trends (Payday Analysis)</div></div>
-      <div id="chart_daily" style="height:300px"></div>
+      <div id="chart_daily" style="height:280px"></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-top: 16px;">
+    <div class="chart-card">
+      <div class="chart-header"><div class="section-title">Slip Distribution Spread (Boxplot)</div></div>
+      <div id="chart_box" style="height:260px"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header"><div class="section-title">Unpaid vs Net Win Dispersion</div></div>
+      <div id="chart_scatter" style="height:260px"></div>
     </div>
   </div>
 
@@ -158,7 +174,6 @@ function handleFile(file) {
 }
 
 function processRetailData(data) {
-  // 1. Tag branch names in the dataset
   data.forEach((row, idx) => {
     const user = String(row.User).toLowerCase();
     if (user.includes('malvern')) row.Branch = 'Malvern';
@@ -177,9 +192,12 @@ function processRetailData(data) {
       row.Hour = 0;
       row.Day = 1;
     }
+    
+    // Clean strings safely
+    let unpaidStr = String(row['Winnings - Unpaid'] || '0').replace(/,/g, '');
+    row.UnpaidNum = parseFloat(unpaidStr) || 0;
   });
 
-  // Switch to default branch view
   switchBranch('Malvern');
   document.getElementById('mainContent').style.display = 'block';
   document.getElementById('uploadZone').style.display = 'none';
@@ -187,7 +205,6 @@ function processRetailData(data) {
 }
 
 function switchBranch(branchName) {
-  // Update button tabs state
   const buttons = document.querySelectorAll('.tab-btn');
   buttons.forEach(btn => {
     if (btn.textContent === branchName) {
@@ -204,7 +221,7 @@ function switchBranch(branchName) {
   const avgGw = bData.length ? bData.reduce((s, r) => s + (r['GW Margin %'] || 0), 0) / bData.length : 0;
   const avgNet = bData.length ? bData.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / bData.length : 0;
 
-  // Compute financial metrics (assumed avg bet variable used for projection if not specified in base units)
+  // Assuming an average bet size of R20
   const assumedAvgBet = 20; 
   const ggrValue = bData.reduce((s, r) => {
     const gw = r['GW Margin %'] || 0;
@@ -220,29 +237,26 @@ function switchBranch(branchName) {
 
   const profitMargin = avgNet;
 
-  // Staff analysis
+  // Compute staff members and productivity metrics
   const uniqueUsers = new Set(bData.map(r => r['User'])).size || 1;
   const revPerEmp = ngrValue / uniqueUsers;
   
-  // Operating parameters
-  const operatingHours = 12; // 12hr operational day
-  const revPerHour = ngrValue / (operatingHours * 30 * 4); // 4 Months
+  const operatingHours = 12; 
+  const revPerHour = ngrValue / (operatingHours * 30 * 4);
 
-  // Hourly density distributions
   const hours = Array.from({length: 24}, (_, i) => i);
   const hourlyCounts = hours.map(h => bData.filter(d => d.Hour === h).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
   
   const maxHour = hourlyCounts.indexOf(Math.max(...hourlyCounts));
   const minHour = hourlyCounts.indexOf(Math.min(...hourlyCounts.filter(h => h > 0))) !== -1 ? hourlyCounts.indexOf(Math.min(...hourlyCounts.filter(h => h > 0))) : maxHour;
 
-  // Daily volume trends
   const days = Array.from({length: 31}, (_, i) => i + 1);
   const dailyCounts = days.map(day => bData.filter(d => d.Day === day).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
 
   const maxDay = dailyCounts.indexOf(Math.max(...dailyCounts)) + 1;
   const minDay = dailyCounts.indexOf(Math.min(...dailyCounts.filter(d => d > 0))) + 1;
 
-  // Update DOMs
+  // Display DOM Update
   document.getElementById('kpi_ggr').textContent = 'R' + ggrValue.toFixed(2);
   document.getElementById('kpi_ngr').textContent = 'R' + ngrValue.toFixed(2);
   document.getElementById('kpi_margin').textContent = profitMargin.toFixed(2) + '%';
@@ -252,7 +266,7 @@ function switchBranch(branchName) {
   document.getElementById('kpi_peak_hour').textContent = maxHour + ':00';
   document.getElementById('kpi_peak_day').textContent = 'Day ' + maxDay;
 
-  // Chart layouts
+  // Layouts
   const layout = { paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', font:{color:'#6b7e99', size:10}, margin:{t:30,l:40,r:20,b:40} };
 
   const allStats = BRANCHES.map(b => {
@@ -260,11 +274,12 @@ function switchBranch(branchName) {
     return {
       name: b,
       slips: d.reduce((s, r) => s + (r['Bet Slips'] || 0), 0),
-      net: d.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / (d.length || 1)
+      net: d.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / (d.length || 1),
+      unpaid: d.reduce((s, r) => s + (r.UnpaidNum || 0), 0)
     };
   });
 
-  // Render Layouts
+  // RENDER CHARTS
   Plotly.newPlot('chart_volume', [{
     type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.slips),
     marker: { color: COLORS }
@@ -275,17 +290,40 @@ function switchBranch(branchName) {
     marker: { color: COLORS }
   }], layout);
 
+  // Pie chart calculation
+  Plotly.newPlot('chart_liabilitypie', [{
+    type: 'pie', hole: 0.55, labels: allStats.map(s => s.name), values: allStats.map(s => s.unpaid),
+    marker: { color: COLORS }, textinfo: 'label+percent'
+  }], Object.assign({}, layout, {margin:{l:10,r:10,t:20,b:20}}));
+
+  // Hourly linegraph
   Plotly.newPlot('chart_hourly', [{
     x: hours, y: hourlyCounts, type: 'scatter', mode: 'lines+markers',
-    line: { color: '#00d4a0', width: 2 }, marker: { color: '#00d4a0', size: 5 }
+    line: { color: '#00d4a0', width: 2.5 }, marker: { color: '#00d4a0', size: 6 }
   }], layout);
 
+  // Daily volume graph
   Plotly.newPlot('chart_daily', [{
-    x: days, y: dailyCounts, type: 'bar',
-    marker: { color: '#f59e0b' }
+    x: days, y: dailyCounts, type: 'bar', marker: { color: '#f59e0b' }
   }], layout);
 
-  // Insight Grid Updates
+  // Boxplot
+  Plotly.newPlot('chart_box', [{
+    y: bData.map(r => r['Bet Slips'] || 0), type: 'box', boxpoints: 'all',
+    jitter: 0.3, pointpos: -1.8, marker: { color: '#3498DB' },
+    name: branchName
+  }], layout);
+
+  // Scatter plot
+  Plotly.newPlot('chart_scatter', [{
+    x: bData.map(r => r['Net Win Margin'] || 0),
+    y: bData.map(r => r.UnpaidNum),
+    mode: 'markers',
+    type: 'scatter',
+    marker: { color: '#e74c3c', size: 6, opacity: 0.7 }
+  }], layout);
+
+  // Insights
   document.getElementById('insightsGrid').innerHTML = `
     <div class="insight-item"><strong>🏆 Branch Stats</strong> ${branchName} processed ${slips.toLocaleString()} bet slips.</div>
     <div class="insight-item"><strong>⏱️ Peak / Quiet Hours</strong> Peak betting is at ${maxHour}:00 and lowest volume is at ${minHour}:00.</div>
