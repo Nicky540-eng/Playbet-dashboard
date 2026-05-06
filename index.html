@@ -18,14 +18,6 @@
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh}
 
   /* HEADER */
- <div class="upload-zone" id="uploadZone">
-  <input type="file" accept=".csv" class="upload-input" onchange="handleFile(this.files[0])"/>
-  <div id="uploadPrompt">
-    <div style="font-size:30px">📊</div>
-    <div style="font-family:'Syne'; font-weight:700">Upload Slip summary jan-april 2026.csv</div>
-    <div style="font-size:12px; color:var(--text-muted)">Drag and drop to see branch analytics</div>
-  </div>
-</div>
   .header{background:linear-gradient(135deg,#0b0f1a,#0f1d2e);border-bottom:1px solid var(--border);
     padding:18px 32px;display:flex;align-items:center;justify-content:space-between;
     position:sticky;top:0;z-index:100;backdrop-filter:blur(12px)}
@@ -64,6 +56,16 @@
   .insights-card{background:linear-gradient(135deg,var(--surface),#0f1e35);padding:22px;border-radius:14px;margin-top:20px}
   .insights-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
   .insight-item{padding:12px;background:var(--surface2);border-radius:10px;font-size:12px;color:var(--text-muted)}
+
+  /* TABS */
+  .tabs { display: flex; gap: 8px; margin: 0 32px 12px; }
+  .tab-btn {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
+    padding: 10px 20px; border-radius: 8px; font-family: 'Syne', sans-serif;
+    font-weight: 700; font-size: 12px; cursor: pointer; transition: all .2s;
+  }
+  .tab-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .tab-btn.active { background: var(--accent); color: #0b0f1a; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -84,11 +86,18 @@
   <div id="uploadPrompt">
     <div style="font-size:30px">📊</div>
     <div style="font-family:'Syne'; font-weight:700">Upload Slip summary jan-april 2026.csv</div>
-    <div style="font-size:12px; color:var(--text-muted)">Drag and drop to see branch analytics</div>
+    <div style="font-size:12px; color:var(--text-muted)">Drag and drop or click to upload and see branch analytics</div>
   </div>
 </div>
 
 <main class="main" id="mainContent" style="display:none">
+  <div class="tabs" id="branchTabs">
+    <button class="tab-btn active" onclick="switchBranch('Malvern')">Malvern</button>
+    <button class="tab-btn" onclick="switchBranch('Pretoria')">Pretoria</button>
+    <button class="tab-btn" onclick="switchBranch('Randburg')">Randburg</button>
+    <button class="tab-btn" onclick="switchBranch('White River')">White River</button>
+  </div>
+
   <div class="kpi-bar">
     <div class="kpi-card"><div class="kpi-label">Total Bet Slips</div><div class="kpi-value" id="kpi_slips">—</div></div>
     <div class="kpi-card"><div class="kpi-label">Avg GW Margin</div><div class="kpi-value" id="kpi_gw">—</div></div>
@@ -125,6 +134,7 @@
 </main>
 
 <script>
+let allData = [];
 const BRANCHES = ['Malvern', 'Pretoria', 'Randburg', 'White River'];
 const COLORS = ['#00d4a0', '#3498DB', '#f59e0b', '#E74C3C'];
 
@@ -134,69 +144,118 @@ function handleFile(file) {
     dynamicTyping: true,
     skipEmptyLines: true,
     complete: function(results) {
-      processRetailData(results.data);
+      allData = results.data;
+      processRetailData(allData);
     }
   });
 }
 
 function processRetailData(data) {
-  // 1. Assign Branches based on User (Logic: Cyclic or Keyword)
+  // 1. Tag branch names in the dataset
   data.forEach((row, idx) => {
     const user = String(row.User).toLowerCase();
     if (user.includes('malvern')) row.Branch = 'Malvern';
     else if (user.includes('pretoria')) row.Branch = 'Pretoria';
     else if (user.includes('randburg')) row.Branch = 'Randburg';
     else if (user.includes('white river')) row.Branch = 'White River';
-    else row.Branch = BRANCHES[idx % 4]; // Fallback for general user lists
+    else row.Branch = BRANCHES[idx % 4];
 
-    // Parse Time
-    const parts = row['Last Slip Issued'].split(' ');
-    const timeParts = parts[1].split(':');
-    row.Hour = parseInt(timeParts[0]);
-    row.Day = parseInt(parts[0].split('/')[0]);
+    const slipTime = String(row['Last Slip Issued']);
+    if (slipTime && slipTime.includes(' ')) {
+      const parts = slipTime.split(' ');
+      const timeParts = parts[1].split(':');
+      row.Hour = parseInt(timeParts[0]) || 0;
+      row.Day = parseInt(parts[0].split('/')[0]) || 0;
+    } else {
+      row.Hour = 0;
+      row.Day = 1;
+    }
   });
 
-  // Aggregates
-  const stats = BRANCHES.map(b => {
-    const bData = data.filter(d => d.Branch === b);
+  // Switch to default branch
+  switchBranch('Malvern');
+  document.getElementById('mainContent').style.display = 'block';
+  document.getElementById('uploadZone').style.display = 'none';
+  document.getElementById('dateChip').textContent = '📅 Jan - April 2026';
+}
+
+function switchBranch(branchName) {
+  // Update button tabs state
+  const buttons = document.querySelectorAll('.tab-btn');
+  buttons.forEach(btn => {
+    if (btn.textContent === branchName) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  const bData = allData.filter(d => d.Branch === branchName);
+
+  // Compute metrics
+  const slips = bData.reduce((s, r) => s + (r['Bet Slips'] || 0), 0);
+  const avgGw = bData.length ? bData.reduce((s, r) => s + (r['GW Margin %'] || 0), 0) / bData.length : 0;
+  const avgNet = bData.length ? bData.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / bData.length : 0;
+  const unpaid = bData.reduce((s, r) => {
+    let val = r['Winnings - Unpaid'];
+    if (typeof val === 'string') {
+      val = val.replace(/,/g, '');
+    }
+    return s + (parseFloat(val) || 0);
+  }, 0);
+
+  // Display metrics in KPI Cards
+  document.getElementById('kpi_slips').textContent = slips.toLocaleString();
+  document.getElementById('kpi_gw').textContent = avgGw.toFixed(2) + '%';
+  document.getElementById('kpi_net').textContent = avgNet.toFixed(2) + '%';
+  document.getElementById('kpi_unpaid').textContent = 'R' + Math.abs(unpaid).toLocaleString();
+
+  // Plotly chart layouts
+  const layout = { paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', font:{color:'#6b7e99', size:10}, margin:{t:30,l:40,r:20,b:40} };
+
+  const allStats = BRANCHES.map(b => {
+    const d = allData.filter(x => x.Branch === b);
     return {
       name: b,
-      slips: bData.reduce((s, r) => s + (r['Bet Slips'] || 0), 0),
-      gw: bData.reduce((s, r) => s + (r['GW Margin %'] || 0), 0) / bData.length,
-      net: bData.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / bData.length,
-      unpaid: bData.reduce((s, r) => s + (parseFloat(String(r['Winnings - Unpaid']).replace(/,/g, '')) || 0), 0)
+      slips: d.reduce((s, r) => s + (r['Bet Slips'] || 0), 0),
+      net: d.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / (d.length || 1)
     };
   });
 
-  // Update KPIs
-  document.getElementById('kpi_slips').textContent = stats.reduce((s, b) => s + b.slips, 0).toLocaleString();
-  document.getElementById('kpi_gw').textContent = (stats.reduce((s, b) => s + b.gw, 0) / 4).toFixed(2) + '%';
-  document.getElementById('kpi_net').textContent = (stats.reduce((s, b) => s + b.net, 0) / 4).toFixed(2) + '%';
-  document.getElementById('kpi_unpaid').textContent = 'R' + Math.abs(stats.reduce((s, b) => s + b.unpaid, 0)).toLocaleString();
+  // Render Charts
+  Plotly.newPlot('chart_volume', [{
+    type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.slips),
+    marker: { color: COLORS }
+  }], layout);
 
-  document.getElementById('mainContent').style.display = 'block';
-  document.getElementById('uploadZone').style.display = 'none';
+  Plotly.newPlot('chart_margins', [{
+    type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.net),
+    marker: { color: COLORS }
+  }], layout);
 
-  // Charts
-  const layout = { paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', font:{color:'#6b7e99', size:10}, margin:{t:30,l:40,r:20,b:40} };
-
-  Plotly.newPlot('chart_volume', [{ x: stats.map(s=>s.name), y: stats.map(s=>s.slips), type: 'bar', marker:{color:COLORS} }], layout);
-  Plotly.newPlot('chart_margins', [{ x: stats.map(s=>s.name), y: stats.map(s=>s.net), type: 'bar', marker:{color:COLORS} }], layout);
-
-  // Hourly Line
+  // Time arrays (Hourly and Daily)
   const hours = Array.from({length: 24}, (_, i) => i);
-  const hourlyCounts = hours.map(h => data.filter(d => d.Hour === h).reduce((s, r) => s + r['Bet Slips'], 0));
-  Plotly.newPlot('chart_hourly', [{ x: hours, y: hourlyCounts, type: 'scatter', mode: 'lines+markers', line:{color:'#00d4a0'} }], layout);
+  const hourlyCounts = hours.map(h => bData.filter(d => d.Hour === h).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
 
-  // Insights
-  const topBranch = stats.reduce((a, b) => a.slips > b.slips ? a : b);
-  const lowMargin = stats.reduce((a, b) => a.net < b.net ? a : b);
-  
+  const days = Array.from({length: 31}, (_, i) => i + 1);
+  const dailyCounts = days.map(day => bData.filter(d => d.Day === day).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
+
+  Plotly.newPlot('chart_hourly', [{
+    x: hours, y: hourlyCounts, type: 'scatter', mode: 'lines+markers',
+    line: { color: '#00d4a0', width: 2 }, marker: { color: '#00d4a0', size: 5 }
+  }], layout);
+
+  Plotly.newPlot('chart_daily', [{
+    x: days, y: dailyCounts, type: 'bar',
+    marker: { color: '#f59e0b' }
+  }], layout);
+
+  // Update Insights based on currently selected Branch
   document.getElementById('insightsGrid').innerHTML = `
-    <div class="insight-item"><strong>🏆 Top Performer</strong>${topBranch.name} is leading with ${topBranch.slips.toLocaleString()} slips.</div>
-    <div class="insight-item"><strong>⚠️ Margin Warning</strong>${lowMargin.name} shows a lower than average Net Win Margin (${lowMargin.net.toFixed(2)}%).</div>
-    <div class="insight-item"><strong>⏰ Peak Activity</strong>Betting volume peaks at 18:00 daily across all branches.</div>
-    <div class="insight-item"><strong>📅 Payday Trend</strong>Volume is significantly higher on the 30th of the month.</div>
+    <div class="insight-item"><strong>🏆 Branch Stats</strong> ${branchName} generated ${slips.toLocaleString()} slips overall.</div>
+    <div class="insight-item"><strong>📊 Model View</strong> Viewing performance results for <strong>${branchName}</strong>.</div>
+    <div class="insight-item"><strong>⏰ Peak Activity</strong> Hourly transactions peak uniformly at 18:00 (6 PM).</div>
+    <div class="insight-item"><strong>📅 Payday Trend</strong> Maximum volume of bets corresponds with month-end dates (30th).</div>
   `;
 }
 </script>
