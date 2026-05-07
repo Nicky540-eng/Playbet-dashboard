@@ -1,331 +1,461 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Playbet SA — Retail Branch Dashboard</title>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
-<style>
-  :root {
-    --bg:#0b0f1a; --surface:#121826; --surface2:#1a2236; --border:#1f2d45;
-    --accent:#00d4a0; --accent2:#f59e0b; --text:#e8edf5; --text-muted:#6b7e99; --text-dim:#3d4f66;
-    --green:#27AE60; --red:#E74C3C; --orange:#F39C12; --blue:#3498DB;
-    --card-glow:0 0 0 1px var(--border),0 4px 24px rgba(0,0,0,.4);
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh}
-
-  /* HEADER */
-  .header{background:linear-gradient(135deg,#0b0f1a,#0f1d2e);border-bottom:1px solid var(--border);
-    padding:18px 32px;display:flex;align-items:center;justify-content:space-between;
-    position:sticky;top:0;z-index:100;backdrop-filter:blur(12px)}
-  .logo-block{display:flex;align-items:center;gap:14px}
-  .logo-mark{width:40px;height:40px;background:var(--accent);border-radius:10px;
-    display:flex;align-items:center;justify-content:center;
-    font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:#0b0f1a}
-  .logo-text{font-family:'Syne',sans-serif;font-weight:800;font-size:20px}
-  .logo-sub{font-family:'DM Mono',monospace;font-size:10px;color:var(--accent);letter-spacing:.15em;text-transform:uppercase}
-
-  /* UPLOAD ZONE */
-  .upload-zone{
-    margin:24px 32px;border:2px dashed var(--border);border-radius:16px;
-    padding:32px;text-align:center;cursor:pointer;transition:all .25s;
-    background:var(--surface);position:relative;overflow:hidden}
-  .upload-zone:hover{border-color:var(--accent);background:rgba(0,212,160,.04)}
-  .upload-zone.has-data{border-style:solid;border-color:var(--accent);padding:16px 24px}
-  .upload-input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-
-  /* KPI */
-  .main{padding:8px 32px 32px;display:flex;flex-direction:column;gap:20px}
-  .kpi-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;
-    padding:18px 20px;position:relative;overflow:hidden;box-shadow:var(--card-glow)}
-  .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent)}
-  .kpi-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px}
-  .kpi-value{font-family:'Syne',sans-serif;font-weight:800;font-size:24px}
-
-  /* GRIDS */
-  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
-  .chart-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
-  .chart-header{padding:14px 20px;border-bottom:1px solid var(--border)}
-  .section-title{font-family:'Syne',sans-serif;font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px}
-  .section-title::before{content:'';width:3px;height:14px;background:var(--accent);border-radius:2px}
-
-  .insights-card{background:linear-gradient(135deg,var(--surface),#0f1e35);padding:22px;border-radius:14px;margin-top:20px}
-  .insights-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
-  .insight-item{padding:12px;background:var(--surface2);border-radius:10px;font-size:12px;color:var(--text-muted)}
-
-  /* TABS */
-  .tabs { display: flex; gap: 8px; margin: 0 32px 12px; }
-  .tab-btn {
-    background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
-    padding: 10px 20px; border-radius: 8px; font-family: 'Syne', sans-serif;
-    font-weight: 700; font-size: 12px; cursor: pointer; transition: all .2s;
-  }
-  .tab-btn:hover { border-color: var(--accent); color: var(--accent); }
-  .tab-btn.active { background: var(--accent); color: #0b0f1a; border-color: var(--accent); }
-</style>
-</head>
-<body>
-
-<header class="header">
-  <div class="logo-block">
-    <div class="logo-mark">PB</div>
-    <div>
-      <div class="logo-text">PLAYBET RETAIL</div>
-      <div class="logo-sub">Branch Performance Monitor</div>
-    </div>
-  </div>
-  <div id="dateChip" style="font-size:11px; color:var(--text-muted)">📅 Waiting for Slip Summary...</div>
-</header>
-
-<div class="upload-zone" id="uploadZone">
-  <input type="file" id="csvFileInput" accept=".csv" class="upload-input"/>
-  <div id="uploadPrompt">
-    <div style="font-size:30px">📊</div>
-    <div style="font-family:'Syne'; font-weight:700">Upload Slip summary jan-april 2026.csv</div>
-    <div style="font-size:12px; color:var(--text-muted)">Drag and drop or click to upload and see branch analytics</div>
-  </div>
-</div>
-
-<main class="main" id="mainContent" style="display:none">
-  <div class="tabs" id="branchTabs">
-    <button class="tab-btn active" onclick="switchBranch('Malvern')">Malvern</button>
-    <button class="tab-btn" onclick="switchBranch('Pretoria')">Pretoria</button>
-    <button class="tab-btn" onclick="switchBranch('Randburg')">Randburg</button>
-    <button class="tab-btn" onclick="switchBranch('White River')">White River</button>
-  </div>
-
-  <div class="kpi-bar">
-    <div class="kpi-card"><div class="kpi-label">Gross Gaming Rev (GGR)</div><div class="kpi-value" id="kpi_ggr">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Net Gaming Rev (NGR)</div><div class="kpi-value" id="kpi_ngr">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Branch Profit Margin</div><div class="kpi-value" id="kpi_margin">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Cashier Gross Profit</div><div class="kpi-value" id="kpi_cashier_profit">—</div></div>
-  </div>
-  
-  <div class="kpi-bar" style="margin-top:12px">
-    <div class="kpi-card"><div class="kpi-label">Total Bet Slips</div><div class="kpi-value" id="kpi_slips">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Rev / Employee</div><div class="kpi-value" id="kpi_rev_per_emp">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Peak Activity Hour</div><div class="kpi-value" id="kpi_peak_hour">—</div></div>
-    <div class="kpi-card"><div class="kpi-label">Max Volume Day</div><div class="kpi-value" id="kpi_peak_day">—</div></div>
-  </div>
-
-  <div class="grid-3" style="margin-top: 16px;">
-    <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Volume by Branch</div></div>
-      <div id="chart_volume" style="height:260px"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Net Win Margin Comparison</div></div>
-      <div id="chart_margins" style="height:260px"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Branch Liabilities (Absolute)</div></div>
-      <div id="chart_liability_bar" style="height:260px"></div>
-    </div>
-  </div>
-
-  <div class="grid-2" style="margin-top: 16px;">
-    <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Hourly Betting Density</div></div>
-      <div id="chart_hourly" style="height:280px"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Daily Volume Trends (Payday Analysis)</div></div>
-      <div id="chart_daily" style="height:280px"></div>
-    </div>
-  </div>
-
-  <div class="grid-2" style="margin-top: 16px;">
-    <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Slip Distribution Spread</div></div>
-      <div id="chart_box" style="height:260px"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-header"><div class="section-title">Unpaid vs Net Win Dispersion</div></div>
-      <div id="chart_scatter" style="height:260px"></div>
-    </div>
-  </div>
-
-  <div class="insights-card">
-    <div class="section-title">Strategic Insights</div>
-    <div class="insights-grid" id="insightsGrid"></div>
-  </div>
-</main>
-
-<script>
-let allData = [];
-const BRANCHES = ['Malvern', 'Pretoria', 'Randburg', 'White River'];
-const COLORS = ['#00d4a0', '#3498DB', '#f59e0b', '#E74C3C'];
-
-document.addEventListener('DOMContentLoaded', () => {
-  const fileInput = document.getElementById('csvFileInput');
-  if (fileInput) {
-    fileInput.addEventListener('change', function(e) {
-      const file = e.target.files[0];
-      if (file) handleFile(file);
-    });
-  }
-});
-
-function handleFile(file) {
-  Papa.parse(file, {
-    header: true,
-    dynamicTyping: true,
-    skipEmptyLines: true,
-    complete: function(results) {
-      allData = results.data;
-      processRetailData(allData);
-    }
-  });
-}
-
-function processRetailData(data) {
-  data.forEach((row, idx) => {
-    const user = String(row.User || '').toLowerCase();
-    if (user.includes('malvern')) row.Branch = 'Malvern';
-    else if (user.includes('pretoria')) row.Branch = 'Pretoria';
-    else if (user.includes('randburg')) row.Branch = 'Randburg';
-    else if (user.includes('white river')) row.Branch = 'White River';
-    else row.Branch = BRANCHES[idx % 4];
-
-    const slipTime = String(row['Last Slip Issued'] || '');
-    if (slipTime && slipTime.includes(' ')) {
-      const parts = slipTime.split(' ');
-      const timeParts = parts[1].split(':');
-      row.Hour = parseInt(timeParts[0]) || 0;
-      row.Day = parseInt(parts[0].split('/')[0]) || 0;
-    } else {
-      row.Hour = 0;
-      row.Day = 1;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playbet Executive Dashboard</title>
     
-    let unpaidStr = String(row['Winnings - Unpaid'] || '0').replace(/,/g, '');
-    row.UnpaidNum = parseFloat(unpaidStr) || 0;
-  });
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
-  switchBranch('Malvern');
-  document.getElementById('mainContent').style.display = 'block';
-  document.getElementById('uploadZone').style.display = 'none';
-  document.getElementById('dateChip').textContent = '📅 Jan - April 2026';
-}
+    <style>
+        .animate-fade-in-up {
+            animation: fadeInUp 0.5s ease-out forwards;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans text-slate-800 selection:bg-emerald-200">
 
-function switchBranch(branchName) {
-  const buttons = document.querySelectorAll('.tab-btn');
-  buttons.forEach(btn => {
-    if (btn.textContent === branchName) {
-      btn.classList.add('active');
-    } else {
-      btn.classList.remove('active');
-    }
-  });
+    <nav class="bg-slate-900 shadow-md">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center gap-3">
+            <div class="bg-emerald-500 text-slate-900 p-1.5 rounded-lg shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+                    <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm14.024-.983a1.125 1.125 0 010 1.966l-5.603 3.113A1.125 1.125 0 019 15.113V8.887c0-.857.921-1.4 1.671-.983l5.603 3.113z" clip-rule="evenodd" />
+                </svg>
+            </div>
+            <span class="text-2xl font-black text-white tracking-widest">PLAYBET</span>
+        </div>
+    </nav>
 
-  const bData = allData.filter(d => d.Branch === branchName);
+    <div class="max-w-7xl mx-auto p-6 mt-6">
+        
+        <header class="mb-10 text-center md:text-left flex flex-col md:flex-row justify-between items-end">
+            <div>
+                <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight">Executive Analytics</h1>
+                <p class="text-slate-500 mt-2 text-lg">Upload your CSV to instantly generate the structured Monthly Executive Report.</p>
+            </div>
+        </header>
 
-  const slips = bData.reduce((s, r) => s + (r['Bet Slips'] || 0), 0);
-  const avgGw = bData.length ? bData.reduce((s, r) => s + (r['GW Margin %'] || 0), 0) / bData.length : 0;
-  const avgNet = bData.length ? bData.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / bData.length : 0;
+        <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 mb-10 transition-all hover:shadow-md">
+            <label class="block text-sm font-bold text-slate-700 mb-4 uppercase tracking-wider">Data Source Injection (Slip Summary)</label>
+            <div class="flex flex-col md:flex-row gap-4 items-center">
+                <input type="file" id="csvFileInput" accept=".csv" 
+                       class="block w-full text-sm text-slate-500 
+                       file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 
+                       file:text-sm file:font-bold file:bg-slate-100 file:text-slate-700 
+                       hover:file:bg-slate-200 cursor-pointer border border-slate-300 rounded-xl p-2 bg-slate-50 transition-all outline-none">
+                <button onclick="processData()" class="w-full md:w-auto bg-slate-900 hover:bg-slate-800 text-white font-bold px-8 py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 flex-shrink-0">
+                    Process Data
+                </button>
+            </div>
+        </div>
 
-  const assumedAvgBet = 20;
-  const ggrValue = bData.reduce((s, r) => {
-    const gw = r['GW Margin %'] || 0;
-    const slips = r['Bet Slips'] || 0;
-    return s + (slips * assumedAvgBet * (gw / 100));
-  }, 0);
+        <div id="dashboardContent" class="hidden space-y-10 animate-fade-in-up">
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div class="w-12 h-1 bg-blue-500 rounded-full mb-4"></div>
+                    <p class="text-sm text-slate-500 font-bold uppercase tracking-wider">Total Users</p>
+                    <p id="cardTotalUsers" class="text-4xl font-black text-slate-900 mt-2">0</p>
+                </div>
+                
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div class="w-12 h-1 bg-amber-500 rounded-full mb-4"></div>
+                    <p class="text-sm text-slate-500 font-bold uppercase tracking-wider">Total Bet Slips</p>
+                    <p id="cardTotalSlips" class="text-4xl font-black text-slate-900 mt-2">0</p>
+                </div>
+                
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div class="w-12 h-1 bg-purple-500 rounded-full mb-4"></div>
+                    <p class="text-sm text-slate-500 font-bold uppercase tracking-wider">Peak Activity Hour</p>
+                    <p id="cardPeakHour" class="text-3xl font-black text-slate-900 mt-2">...</p>
+                </div>
+                
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div class="w-12 h-1 bg-emerald-500 rounded-full mb-4"></div>
+                    <p class="text-sm text-slate-500 font-bold uppercase tracking-wider">Peak Day of Month</p>
+                    <p id="cardPeakDay" class="text-3xl font-black text-slate-900 mt-2">...</p>
+                </div>
+            </div>
 
-  const ngrValue = bData.reduce((s, r) => {
-    const net = r['Net Win Margin'] || 0;
-    const slips = r['Bet Slips'] || 0;
-    return s + (slips * assumedAvgBet * (net / 100));
-  }, 0);
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">Hourly Engagement Trend</h3>
+                    <div class="relative h-64 w-full">
+                        <canvas id="hourlyChartCanvas"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">Daily Activity Volume</h3>
+                    <div class="relative h-64 w-full">
+                        <canvas id="dailyChartCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
 
-  const profitMargin = avgNet;
+            <div class="bg-slate-900 rounded-3xl shadow-2xl p-8 md:p-10 flex flex-col md:flex-row items-center justify-between text-white relative overflow-hidden">
+                <div class="z-10 text-center md:text-left mb-6 md:mb-0">
+                    <h2 class="text-3xl font-bold mb-2">Data Synchronized</h2>
+                    <p class="text-slate-400 max-w-lg text-lg">Your data and charts have been compiled into the Playbet format and are ready for export.</p>
+                </div>
+                
+                <div class="z-10">
+                    <button onclick="generateExecutivePDF()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-extrabold px-8 py-4 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-3 w-full md:w-auto transform hover:scale-105">
+                        Download PDF Report
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-  const uniqueUsers = new Set(bData.map(r => r['User'])).size || 1;
-  const revPerEmp = ngrValue / uniqueUsers;
-  const cashierGrossProfit = ggrValue / uniqueUsers;
+    <script>
+        let reportMetrics = {}; 
+        let hourlyChart = null;
+        let dailyChart = null;
 
-  const hours = Array.from({length: 24}, (_, i) => i);
-  const hourlyCounts = hours.map(h => bData.filter(d => d.Hour === h).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
-  
-  const maxHour = hourlyCounts.indexOf(Math.max(...hourlyCounts));
-  const minHour = hourlyCounts.indexOf(Math.min(...hourlyCounts.filter(h => h > 0))) !== -1 ? hourlyCounts.indexOf(Math.min(...hourlyCounts.filter(h => h > 0))) : maxHour;
+        function parseCustomDate(dateStr) {
+            if (!dateStr) return null;
+            let d = new Date(dateStr);
+            if (!isNaN(d)) return d;
+            
+            const parts = dateStr.split(/[\s/:]+/);
+            if (parts.length >= 3) {
+                let day = parseInt(parts[0], 10);
+                let month = parseInt(parts[1], 10) - 1; 
+                let year = parseInt(parts[2], 10);
+                if (year < 100) year += 2000;
+                
+                let h = parts[3] ? parseInt(parts[3], 10) : 0;
+                let m = parts[4] ? parseInt(parts[4], 10) : 0;
+                let s = parts[5] ? parseInt(parts[5], 10) : 0;
+                
+                d = new Date(year, month, day, h, m, s);
+                if (!isNaN(d)) return d;
+            }
+            return null;
+        }
 
-  const days = Array.from({length: 31}, (_, i) => i + 1);
-  const dailyCounts = days.map(day => bData.filter(d => d.Day === day).reduce((s, r) => s + (r['Bet Slips'] || 0), 0));
+        function processData() {
+            const fileInput = document.getElementById('csvFileInput');
+            const file = fileInput.files[0];
 
-  const maxDay = dailyCounts.indexOf(Math.max(...dailyCounts)) + 1;
-  const minDay = dailyCounts.indexOf(Math.min(...dailyCounts.filter(d => d > 0))) + 1;
+            if (!file) {
+                alert('Please upload a CSV file first.');
+                return;
+            }
 
-  document.getElementById('kpi_ggr').textContent = 'R' + ggrValue.toFixed(2);
-  document.getElementById('kpi_ngr').textContent = 'R' + ngrValue.toFixed(2);
-  document.getElementById('kpi_margin').textContent = profitMargin.toFixed(2) + '%';
-  document.getElementById('kpi_cashier_profit').textContent = 'R' + cashierGrossProfit.toFixed(2);
-  document.getElementById('kpi_slips').textContent = slips.toLocaleString();
-  document.getElementById('kpi_rev_per_emp').textContent = 'R' + revPerEmp.toFixed(2);
-  document.getElementById('kpi_peak_hour').textContent = maxHour + ':00';
-  document.getElementById('kpi_peak_day').textContent = 'Day ' + maxDay;
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    const data = results.data;
+                    if (data.length === 0) return;
 
-  const layout = { paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', font:{color:'#6b7e99', size:10}, margin:{t:30,l:40,r:20,b:40} };
+                    document.getElementById('dashboardContent').classList.remove('hidden');
 
-  const allStats = BRANCHES.map(b => {
-    const d = allData.filter(x => x.Branch === b);
-    return {
-      name: b,
-      slips: d.reduce((s, r) => s + (r['Bet Slips'] || 0), 0),
-      net: d.reduce((s, r) => s + (r['Net Win Margin'] || 0), 0) / (d.length || 1),
-      unpaid: d.reduce((s, r) => s + (Math.abs(r.UnpaidNum) || 0), 0)
-    };
-  });
+                    let hourCounts = Array(24).fill(0);
+                    let dayCounts = {};
+                    
+                    let totalUsers = data.length;
+                    let totalSlips = 0;
+                    let totalGwMargin = 0;
+                    let totalNetMargin = 0;
+                    let totalWithholdingTax = 0;
+                    let totalUnpaidWinnings = 0;
+                    let userStats = [];
 
-  Plotly.newPlot('chart_volume', [{
-    type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.slips),
-    marker: { color: COLORS }
-  }], layout);
+                    data.forEach(row => {
+                        // 1. Time Logic
+                        if (row['Last Slip Issued']) {
+                            const dateObj = parseCustomDate(row['Last Slip Issued']);
+                            if (dateObj) {
+                                hourCounts[dateObj.getHours()]++;
+                                const day = dateObj.getDate();
+                                dayCounts[day] = (dayCounts[day] || 0) + 1;
+                            }
+                        }
 
-  Plotly.newPlot('chart_margins', [{
-    type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.net),
-    marker: { color: COLORS }
-  }], layout);
+                        // 2. Financial Metrics Parsing
+                        let slips = parseInt((row['Bet Slips'] || '0').replace(/,/g, '')) || 0;
+                        let tax = parseFloat((row['Withholding Tax'] || '0').replace(/,/g, '')) || 0;
+                        let gw = parseFloat((row['GW Margin %'] || '0').replace(/,/g, '')) || 0;
+                        let net = parseFloat((row['Net Win Margin'] || '0').replace(/,/g, '')) || 0;
+                        let unpaid = parseFloat(String(row['Winnings - Unpaid'] || '0').replace(/,/g, '')) || 0;
 
-  Plotly.newPlot('chart_liability_bar', [{
-    type: 'bar', x: allStats.map(s => s.name), y: allStats.map(s => s.unpaid),
-    marker: { color: COLORS }
-  }], layout);
+                        totalSlips += slips;
+                        totalWithholdingTax += tax;
+                        totalGwMargin += gw;
+                        totalNetMargin += net;
+                        totalUnpaidWinnings += unpaid;
 
-  Plotly.newPlot('chart_hourly', [{
-    x: hours, y: hourlyCounts, type: 'scatter', mode: 'lines+markers',
-    line: { color: '#00d4a0', width: 2.5 }, marker: { color: '#00d4a0', size: 6 }
-  }], layout);
+                        if (row['User']) {
+                            userStats.push({
+                                user: row['User'],
+                                slips: slips,
+                                gw: gw,
+                                net: net,
+                                unpaid: unpaid
+                            });
+                        }
+                    });
 
-  Plotly.newPlot('chart_daily', [{
-    x: days, y: dailyCounts, type: 'bar', marker: { color: '#f59e0b' }
-  }], layout);
+                    // 3. Calculate Averages & Peaks
+                    let avgGwMargin = totalUsers > 0 ? (totalGwMargin / totalUsers) : 0;
+                    let avgNetMargin = totalUsers > 0 ? (totalNetMargin / totalUsers) : 0;
 
-  Plotly.newPlot('chart_box', [{
-    y: bData.map(r => r['Bet Slips'] || 0), type: 'box', boxpoints: 'all',
-    jitter: 0.3, pointpos: -1.8, marker: { color: '#3498DB' },
-    name: branchName
-  }], layout);
+                    let peakHour = hourCounts.indexOf(Math.max(...hourCounts));
+                    let peakDay = Object.keys(dayCounts).length > 0 ? Object.keys(dayCounts).reduce((a, b) => dayCounts[a] > dayCounts[b] ? a : b) : "N/A";
 
-  Plotly.newPlot('chart_scatter', [{
-    x: bData.map(r => r['Net Win Margin'] || 0),
-    y: bData.map(r => r.UnpaidNum),
-    mode: 'markers',
-    type: 'scatter',
-    marker: { color: '#e74c3c', size: 6, opacity: 0.7 }
-  }], layout);
+                    let formattedHour = "N/A";
+                    if (Math.max(...hourCounts) > 0) {
+                        const ampm = peakHour >= 12 ? 'PM' : 'AM';
+                        const displayHour = peakHour % 12 || 12;
+                        formattedHour = `${displayHour}:00 ${ampm}`;
+                    }
 
-  document.getElementById('insightsGrid').innerHTML = `
-    <div class="insight-item"><strong>🏆 Branch Stats</strong> ${branchName} processed ${slips.toLocaleString()} bet slips.</div>
-    <div class="insight-item"><strong>⏱️ Peak / Quiet Hours</strong> Peak betting is at ${maxHour}:00 and lowest volume is at ${minHour}:00.</div>
-    <div class="insight-item"><strong>📊 Volume Trends</strong> Maximum volume occurs on Day ${maxDay} and lowest on Day ${minDay}.</div>
-    <div class="insight-item"><strong>ℹ️ Active Employees</strong> ${uniqueUsers} employees handling slips for this branch.</div>
-  `;
-}
-</script>
+                    userStats.sort((a, b) => b.slips - a.slips);
+                    let topUsers = userStats.slice(0, 10);
+
+                    // Update UI Cards
+                    document.getElementById('cardTotalUsers').innerText = totalUsers.toLocaleString();
+                    document.getElementById('cardTotalSlips').innerText = totalSlips.toLocaleString();
+                    document.getElementById('cardPeakHour').innerText = formattedHour;
+                    document.getElementById('cardPeakDay').innerText = `Day ${peakDay}`;
+
+                    // --- GENERATE CHARTS ---
+                    renderCharts(hourCounts, dayCounts);
+
+                    reportMetrics = {
+                        totalUsers: totalUsers,
+                        totalSlips: totalSlips,
+                        avgGwMargin: avgGwMargin.toFixed(2),
+                        avgNetMargin: avgNetMargin.toFixed(2),
+                        totalTax: totalWithholdingTax.toFixed(2),
+                        totalUnpaid: totalUnpaidWinnings.toFixed(2),
+                        topUsers: topUsers
+                    };
+                }
+            });
+        }
+
+        function renderCharts(hourCounts, dayCounts) {
+            // Destroy existing charts to prevent hover glitches
+            if(hourlyChart) hourlyChart.destroy();
+            if(dailyChart) dailyChart.destroy();
+
+            // Setup Hourly Chart Data
+            const hourLabels = Array.from({length: 24}, (_, i) => `${i}:00`);
+            const ctxHourly = document.getElementById('hourlyChartCanvas').getContext('2d');
+            
+            hourlyChart = new Chart(ctxHourly, {
+                type: 'bar',
+                data: {
+                    labels: hourLabels,
+                    datasets: [{
+                        label: 'Active Users',
+                        data: hourCounts,
+                        backgroundColor: '#8b5cf6', // Purple-500
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 0 }, // Prevent animation delay for instant PDF export
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            // Setup Daily Chart Data
+            // Sort day keys chronologically
+            const days = Object.keys(dayCounts).sort((a,b) => parseInt(a) - parseInt(b));
+            const dayValues = days.map(day => dayCounts[day]);
+            const dayLabels = days.map(day => `Day ${day}`);
+            
+            const ctxDaily = document.getElementById('dailyChartCanvas').getContext('2d');
+            dailyChart = new Chart(ctxDaily, {
+                type: 'line',
+                data: {
+                    labels: dayLabels,
+                    datasets: [{
+                        label: 'Volume',
+                        data: dayValues,
+                        borderColor: '#10b981', // Emerald-500
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.3,
+                        pointBackgroundColor: '#10b981'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 0 },
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+
+        function generateExecutivePDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            const brandDark = [15, 23, 42];    
+            const brandAccent = [16, 185, 129]; 
+            const lightGrey = [241, 245, 249]; 
+            
+            // Draw Playbet Logo Native
+            doc.setFillColor(brandAccent[0], brandAccent[1], brandAccent[2]);
+            doc.roundedRect(14, 15, 12, 12, 2, 2, 'F'); 
+            doc.setFillColor(255, 255, 255);
+            doc.triangle(18, 18, 18, 24, 23, 21, 'F');
+            
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(24);
+            doc.setTextColor(brandDark[0], brandDark[1], brandDark[2]);
+            doc.text("PLAYBET", 30, 24);
+
+            doc.setDrawColor(brandAccent[0], brandAccent[1], brandAccent[2]);
+            doc.setLineWidth(1);
+            doc.line(14, 32, 196, 32);
+
+            doc.setFontSize(16);
+            doc.text("EXECUTIVE DATA EXTRACT", 14, 42);
+            
+            doc.setFontSize(10);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(100, 116, 139); 
+            const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+            doc.text(`Source: Processed Slip Summary`, 14, 48);
+            doc.text(`Date Issued: ${today}`, 14, 53);
+
+            const drawSectionHeader = (text, yPos) => {
+                doc.setFillColor(brandDark[0], brandDark[1], brandDark[2]);
+                doc.rect(14, yPos - 6, 182, 10, 'F'); 
+                doc.setFillColor(brandAccent[0], brandAccent[1], brandAccent[2]);
+                doc.rect(14, yPos - 6, 3, 10, 'F');   
+
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(11);
+                doc.setTextColor(255, 255, 255);
+                doc.text(text, 22, yPos + 1);
+                
+                doc.setTextColor(brandDark[0], brandDark[1], brandDark[2]);
+                doc.setFont("helvetica", "normal");
+                return yPos + 12;
+            };
+
+            // --- PAGE 1: Core Metrics ---
+            let currentY = 70;
+            currentY = drawSectionHeader("KEY PERFORMANCE METRICS (CSV DERIVED)", currentY);
+
+            const scorecardBody = [
+                [{content: 'User Base & Volume', colSpan: 2, styles: {fontStyle: 'bold', fillColor: lightGrey}}],
+                ['Total Users', reportMetrics.totalUsers.toLocaleString()],
+                ['Total Bet Slips Generated', reportMetrics.totalSlips.toLocaleString()],
+                [{content: 'Financial Margin Averages', colSpan: 2, styles: {fontStyle: 'bold', fillColor: lightGrey}}],
+                ['Average GW Margin %', `${reportMetrics.avgGwMargin}%`],
+                ['Average Net Win Margin %', `${reportMetrics.avgNetMargin}%`],
+                [{content: 'Liabilities & Taxes', colSpan: 2, styles: {fontStyle: 'bold', fillColor: lightGrey}}],
+                ['Total Withholding Tax', reportMetrics.totalTax],
+                ['Total Winnings - Unpaid', reportMetrics.totalUnpaid]
+            ];
+
+            doc.autoTable({
+                startY: currentY,
+                head: [['Metric', 'Actual Value']],
+                body: scorecardBody,
+                theme: 'grid',
+                headStyles: { fillColor: brandDark, textColor: [255,255,255], fontStyle: 'bold' },
+                styles: { fontSize: 9, cellPadding: 4, lineColor: [226, 232, 240] },
+                columnStyles: { 0: { cellWidth: 100, fontStyle: 'bold', textColor: brandDark } }
+            });
+
+            currentY = doc.lastAutoTable.finalY + 15;
+
+            // --- VISUAL ENGAGEMENT ANALYTICS ---
+            currentY = drawSectionHeader("VISUAL ENGAGEMENT ANALYTICS", currentY);
+            
+            // Extract images from the web canvases
+            const hourlyCanvas = document.getElementById('hourlyChartCanvas');
+            const dailyCanvas = document.getElementById('dailyChartCanvas');
+            
+            if (hourlyCanvas && dailyCanvas) {
+                const hourlyImg = hourlyCanvas.toDataURL('image/png', 1.0);
+                const dailyImg = dailyCanvas.toDataURL('image/png', 1.0);
+
+                // Add Subtitles
+                doc.setFontSize(9);
+                doc.setFont("helvetica", "bold");
+                doc.text("Hourly Activity Distribution", 14, currentY + 2);
+                doc.text("Daily Volume Trend", 110, currentY + 2);
+
+                // Inject Images (x, y, width, height)
+                doc.addImage(hourlyImg, 'PNG', 14, currentY + 5, 85, 45);
+                doc.addImage(dailyImg, 'PNG', 110, currentY + 5, 85, 45);
+                
+                currentY += 60; // push the cursor down past the images
+            }
+
+
+            // --- PAGE 2: Top Users ---
+            doc.addPage();
+            currentY = 20;
+
+            doc.setFillColor(brandAccent[0], brandAccent[1], brandAccent[2]);
+            doc.roundedRect(14, 15, 8, 8, 1, 1, 'F');
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.setTextColor(brandDark[0], brandDark[1], brandDark[2]);
+            doc.text("PLAYBET", 25, 21);
+            doc.setDrawColor(226, 232, 240); 
+            doc.line(14, 26, 196, 26);
+            
+            currentY = 40;
+            currentY = drawSectionHeader("TOP 10 USERS BY ACTIVITY (BET SLIPS)", currentY);
+            doc.setFontSize(10);
+            doc.setTextColor(100, 116, 139);
+            doc.text("The highest volume players extracted directly from the uploaded dataset.", 14, currentY);
+            currentY += 8;
+
+            const topUserRows = reportMetrics.topUsers.map(u => [
+                u.user, 
+                u.slips.toLocaleString(), 
+                `${u.gw.toFixed(2)}%`, 
+                `${u.net.toFixed(2)}%`,
+                u.unpaid.toFixed(2)
+            ]);
+            
+            doc.autoTable({
+                startY: currentY,
+                head: [['User Name', 'Total Bet Slips', 'GW Margin %', 'Net Win Margin', 'Unpaid Winnings']],
+                body: topUserRows,
+                theme: 'striped',
+                headStyles: { fillColor: brandDark },
+                alternateRowStyles: { fillColor: lightGrey },
+                styles: { fontSize: 9, cellPadding: 4 }
+            });
+
+            const pageCount = doc.internal.getNumberOfPages();
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184);
+            for (let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                doc.text(`Playbet Internal Confidential`, 14, 285);
+                doc.text(`Page ${i} of ${pageCount}`, 180, 285, {align: 'right'});
+            }
+
+            doc.save("Playbet_Slip_Summary_Report.pdf");
+        }
+    </script>
 </body>
 </html>
