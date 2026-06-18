@@ -71,11 +71,53 @@ def generate_strategic_analysis(branch_name, yoy, total_ggr, top_game):
     return "\n\n".join(insights)
 
 # --- APP LAYOUT ---
+# 1. Initialize 2026 Manual Ledger in Session State
+if 'manual_2026_data' not in st.session_state:
+    st.session_state.manual_2026_data = pd.DataFrame(columns=[
+        'Shop', 'Game', 'GGR', 'Year', 'Month', 'MonthNum'
+    ])
+
 st.sidebar.header("Navigation")
 files = st.sidebar.file_uploader("Upload Excel/CSV", accept_multiple_files=True, type=["xlsx", "csv"])
 
+# 2. Add 2026 Data Entry Section to Sidebar
+st.sidebar.markdown("---")
+st.sidebar.header("📥 Enter 2026 Actuals")
+
+entry_shop = st.sidebar.selectbox("Select Branch for 2026:", BRANCHES)
+entry_month = st.sidebar.selectbox("Select Month (2026):", month_order)
+entry_game = st.sidebar.text_input("Enter Game Name (2026):", value="Lucky #1")
+entry_ggr = st.sidebar.number_input("Enter GGR Amount (R):", min_value=0.0, format="%.2f")
+
+if st.sidebar.button("Append to 2026 Ledger"):
+    month_num = month_order.index(entry_month) + 1
+    new_row = pd.DataFrame([{
+        'Shop': entry_shop,
+        'Game': entry_game,
+        'GGR': entry_ggr,
+        'Year': '2026',
+        'Month': entry_month,
+        'MonthNum': month_num
+    }])
+    st.session_state.manual_2026_data = pd.concat([st.session_state.manual_2026_data, new_row], ignore_index=True)
+    st.sidebar.success(f"Added R {entry_ggr:,.2f} for {entry_month}!")
+
+# Clear button to reset manual entries if needed
+if st.sidebar.button("Reset 2026 Ledger"):
+    st.session_state.manual_2026_data = pd.DataFrame(columns=['Shop', 'Game', 'GGR', 'Year', 'Month', 'MonthNum'])
+    st.rerun()
+
+
+# --- MAIN RUN LOGIC ---
 if files:
-    df = load_data(files)
+    df_uploaded = load_data(files)
+    
+    # 3. Combine uploaded data with manual 2026 entries
+    if not st.session_state.manual_2026_data.empty:
+        df = pd.concat([df_uploaded, st.session_state.manual_2026_data], ignore_index=True)
+    else:
+        df = df_uploaded
+
     if not df.empty:
         nav_options = ["All Branches Dashboard"] + BRANCHES
         selected_view = st.sidebar.radio("Select Branch Analysis:", nav_options)
@@ -101,9 +143,10 @@ if files:
         st.divider()
 
         # --- VISUALIZATIONS ---
-        st.subheader("GGR: 2024 vs 2025 Stacked Comparison")
+        st.subheader("GGR: Multi-Year Stacked Comparison")
         chart_data = df_filtered.groupby(['MonthNum', 'Month', 'Year'])['GGR'].sum().reset_index().sort_values('MonthNum')
         
+        # The chart dynamically receives the new "2026" entries here and updates automatically
         fig = px.bar(chart_data, x='Month', y='GGR', color='Year', barmode='stack', 
                      category_orders={"Month": month_order}, color_discrete_map=YEAR_COLORS)
         fig.update_layout(xaxis_title=None, yaxis_title="Gross Gaming Revenue (ZAR)")
