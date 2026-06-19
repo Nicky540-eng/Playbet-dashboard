@@ -14,6 +14,7 @@ month_order = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
 
 YEAR_COLORS = {"2024": "#3498db", "2025": "#e67e22", "2026": "#2ecc71"}
+DEPOSIT_YEAR_COLORS = {"2024": "#27ae60", "2025": "#f1c40f", "2026": "#2ecc71"}  # Green shades for deposits
 GAME_PALETTE = px.colors.qualitative.Vivid
 
 # --- BULLETPROOF DATA LOADER (NATIVE EXCEL READING) ---
@@ -36,22 +37,16 @@ def load_data(uploaded_files):
             s = '-' + s[1:-1]
         
         # 4. Handle SA number format with commas and decimals
-        # Examples: "5,216,807.11" or "3,928.15" or "-1,278.00"
-        # Remove commas used as thousand separators, keep decimal points
         if ',' in s:
-            # If there's a dot as well, commas are thousand separators
             if '.' in s:
-                s = s.replace(',', '')  # Remove all commas
+                s = s.replace(',', '')
             else:
-                # No dot, commas could be decimal or thousand separators
-                # If the comma is the last separator, it's a decimal
                 parts = s.split(',')
-                if len(parts[-1]) <= 2:  # Last part has 1-2 digits
-                    s = s.replace(',', '.')  # Decimal
+                if len(parts[-1]) <= 2:
+                    s = s.replace(',', '.')
                 else:
-                    s = s.replace(',', '')  # Thousand separator
+                    s = s.replace(',', '')
         
-        # 5. Remove any remaining commas
         s = s.replace(',', '')
         
         try:
@@ -61,7 +56,6 @@ def load_data(uploaded_files):
 
     # --- Special date parser for January 2025 ---
     def parse_jan2025_date(date_val):
-        """Special parser for January 2025 dates like '01/01/25 14:36:23'"""
         if pd.isna(date_val):
             return None
         
@@ -70,7 +64,6 @@ def load_data(uploaded_files):
             
         date_str = str(date_val).strip()
         
-        # Try to parse as dd/mm/yy HH:MM:SS
         try:
             parts = date_str.split()
             if len(parts) >= 2:
@@ -82,7 +75,7 @@ def load_data(uploaded_files):
                     month = int(date_parts[1])
                     year = int(date_parts[2])
                     if year < 100:
-                        year += 2000  # Convert '25' to '2025'
+                        year += 2000
                     hour = int(time_parts[0])
                     minute = int(time_parts[1])
                     second = int(time_parts[2]) if len(time_parts) > 2 else 0
@@ -92,7 +85,6 @@ def load_data(uploaded_files):
         except:
             pass
         
-        # Fallback to pandas
         try:
             return pd.to_datetime(date_str, format='%d/%m/%y %H:%M:%S', errors='coerce')
         except:
@@ -102,7 +94,7 @@ def load_data(uploaded_files):
                 return None
 
     all_data = []
-    diagnostics = {"gross_col_used": "None", "fallback_used": False, "items_skipped": []}
+    diagnostics = {"gross_col_used": "None", "paid_in_col_used": "None", "fallback_used": False, "items_skipped": []}
 
     def process_raw_dataframe(df_raw, source_name):
         # Robust Header Finder
@@ -140,10 +132,32 @@ def load_data(uploaded_files):
             diagnostics["fallback_used"] = True
             df['GGR'] = 0.0
         
+        # --- EXTRACT PAID IN (DEPOSITS) ---
+        paid_in_col = None
+        for c in df.columns:
+            clean_c = re.sub(r'[\s\n\r_]+', '', str(c).lower())
+            # Look for 'paid in' or 'paidin' 
+            if clean_c in ['paidin', 'paid in']:
+                paid_in_col = c
+                break
+        
+        # If not found, look for any column with 'paid' in name
+        if paid_in_col is None:
+            for c in df.columns:
+                clean_c = re.sub(r'[\s\n\r_]+', '', str(c).lower())
+                if 'paid' in clean_c and 'out' not in clean_c:
+                    paid_in_col = c
+                    break
+        
+        if paid_in_col:
+            diagnostics["paid_in_col_used"] = paid_in_col
+            df['Deposits'] = df[paid_in_col].apply(robust_clean)
+        else:
+            df['Deposits'] = 0.0
+        
         # Dynamic Date Column
         date_col = next((c for c in df.columns if 'firstslip' in str(c).lower().replace(' ', '') or 'date' in str(c).lower()), None)
         if date_col:
-            # Use special parser for January 2025
             if 'jan' in source_name.lower():
                 df['First Slip Issued'] = df[date_col].apply(parse_jan2025_date)
             else:
@@ -191,7 +205,7 @@ def load_data(uploaded_files):
     return final_df, diagnostics
 
 # --- ADAPTIVE ANALYTICS ENGINE ---
-def generate_strategic_analysis(branch_name, yoy, total_ggr, top_game):
+def generate_strategic_analysis(branch_name, yoy, total_ggr, total_deposits, top_game):
     display_name = "the overall network" if branch_name == "All Branches Dashboard" else f"the {branch_name} branch"
     insights = [f"### 📊 Tailored Action Plan: {branch_name}"]
 
@@ -205,31 +219,40 @@ def generate_strategic_analysis(branch_name, yoy, total_ggr, top_game):
         insights.append(f"**🚨 Critical Decline ({yoy:+.1f}%):** {display_name} requires immediate intervention. \n* **Action:** Conduct a strict operational audit. Assess local competitor promotions, review branch overheads, and consider aggressive grassroots marketing to rebuild foot traffic.")
 
     insights.append(f"**🎯 Product Optimization:** With **'{top_game}'** dominating the revenue share, ensure terminal availability and uptime for this game is at 100% during peak hours.")
+    insights.append(f"**💰 Deposits Performance:** Total deposits of R {total_deposits:,.2f} indicate {'strong' if total_deposits > 1000000 else 'moderate'} player activity.")
     return "\n\n".join(insights)
 
 # --- APP LAYOUT ---
 if 'manual_2026_data' not in st.session_state:
-    st.session_state.manual_2026_data = pd.DataFrame(columns=['Shop', 'Game', 'GGR', 'Year', 'Month', 'MonthNum'])
+    st.session_state.manual_2026_data = pd.DataFrame(columns=['Shop', 'Game', 'GGR', 'Deposits', 'Year', 'Month', 'MonthNum'])
 
 st.sidebar.header("Navigation")
 files = st.sidebar.file_uploader("Upload Excel/CSV", accept_multiple_files=True, type=["xlsx", "csv"])
 
 st.sidebar.markdown("---")
-st.sidebar.header("📥 Enter 2026 Actuals")
-
+st.sidebar.header("📥 Enter 2026 Actuals - GGR & Deposits")
 entry_shop = st.sidebar.selectbox("Select Branch for 2026:", BRANCHES)
 entry_month = st.sidebar.selectbox("Select Month (2026):", month_order)
 entry_game = st.sidebar.text_input("Enter Game Name (2026):", value="Lucky #1")
 entry_ggr = st.sidebar.number_input("Enter GGR Amount (R):", min_value=0.0, format="%.2f")
+entry_deposits = st.sidebar.number_input("Enter Deposits / Paid In Amount (R):", min_value=0.0, format="%.2f")
 
 if st.sidebar.button("Append to 2026 Ledger"):
     month_num = month_order.index(entry_month) + 1
-    new_row = pd.DataFrame([{'Shop': entry_shop, 'Game': entry_game, 'GGR': entry_ggr, 'Year': '2026', 'Month': entry_month, 'MonthNum': month_num}])
+    new_row = pd.DataFrame([{
+        'Shop': entry_shop, 
+        'Game': entry_game, 
+        'GGR': entry_ggr,
+        'Deposits': entry_deposits,
+        'Year': '2026', 
+        'Month': entry_month, 
+        'MonthNum': month_num
+    }])
     st.session_state.manual_2026_data = pd.concat([st.session_state.manual_2026_data, new_row], ignore_index=True)
-    st.sidebar.success(f"Added R {entry_ggr:,.2f} for {entry_month}!")
+    st.sidebar.success(f"Added R {entry_ggr:,.2f} GGR and R {entry_deposits:,.2f} Deposits for {entry_month}!")
 
 if st.sidebar.button("Reset 2026 Ledger"):
-    st.session_state.manual_2026_data = pd.DataFrame(columns=['Shop', 'Game', 'GGR', 'Year', 'Month', 'MonthNum'])
+    st.session_state.manual_2026_data = pd.DataFrame(columns=['Shop', 'Game', 'GGR', 'Deposits', 'Year', 'Month', 'MonthNum'])
     st.rerun()
 
 # --- MAIN RUN LOGIC ---
@@ -266,6 +289,7 @@ if files:
             df_filtered = df_filtered[df_filtered['Month'] == selected_month]
         
         total_ggr = df_filtered['GGR'].sum()
+        total_deposits = df_filtered['Deposits'].sum() if 'Deposits' in df_filtered.columns else 0
         top_game = df_filtered.groupby('Game')['GGR'].sum().idxmax() if not df_filtered.empty else "N/A"
         
         # Calculate YoY only if viewing All Time
@@ -278,10 +302,11 @@ if files:
                 yoy = ((curr - prev) / prev) * 100 if prev != 0 else 0
             
         st.subheader(f"{selected_view} Performance")
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("Total GGR", f"R {total_ggr:,.2f}")
-        c2.metric("YoY Growth", f"{yoy:+.1f}%" if selected_year == "All Time" else "N/A (Filtered)")
-        c3.metric("Top Performer", top_game)
+        c2.metric("Total Deposits (Paid In)", f"R {total_deposits:,.2f}")
+        c3.metric("YoY Growth", f"{yoy:+.1f}%" if selected_year == "All Time" else "N/A (Filtered)")
+        c4.metric("Top Performer", top_game)
         st.divider()
 
         st.subheader("GGR: Multi-Year Stacked Comparison")
@@ -290,6 +315,14 @@ if files:
         fig = px.bar(chart_data, x='Month', y='GGR', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=YEAR_COLORS)
         fig.update_layout(xaxis_title=None, yaxis_title="Gross Gaming Revenue (ZAR)")
         st.plotly_chart(fig, use_container_width=True)
+        
+        st.subheader("Deposits (Paid In): Multi-Year Stacked Comparison")
+        chart_data_deposits = df_filtered.groupby(['MonthNum', 'Month', 'Year'])['Deposits'].sum().reset_index().sort_values('MonthNum')
+        
+        # Use different color scheme for deposits (green shades)
+        fig_deposits = px.bar(chart_data_deposits, x='Month', y='Deposits', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=DEPOSIT_YEAR_COLORS)
+        fig_deposits.update_layout(xaxis_title=None, yaxis_title="Deposits / Paid In (ZAR)")
+        st.plotly_chart(fig_deposits, use_container_width=True)
             
         st.subheader(f"Game Revenue Analysis")
         game_dist = df_filtered.groupby('Game')['GGR'].sum().reset_index()
@@ -297,23 +330,7 @@ if files:
         st.plotly_chart(fig_pie, use_container_width=True)
         
         with st.expander("📊 View Strategic Analysis & Solutions", expanded=True):
-            st.markdown(generate_strategic_analysis(selected_view, yoy, total_ggr, top_game))
-            
-        # --- DIAGNOSTIC TOOL ---
-        st.divider()
-        with st.expander("🛠️ System Diagnostic (Verify Data Integrity)"):
-            if diagnostics["items_skipped"]:
-                st.warning(f"🚫 Ignored the following user-related files/tabs:\n" + "\n".join([f"- {f}" for f in diagnostics["items_skipped"]]))
-                
-            if diagnostics["fallback_used"]:
-                st.error("⚠️ The system could NOT find a column named 'Gross win' or 'GGR'.")
-            else:
-                st.success(f"✅ Successfully extracted GGR from the column: **{diagnostics['gross_col_used']}**")
-            
-            st.write("Preview of the final dataset (Check the exact values here!):")
-            st.dataframe(df_filtered[['Shop', 'Game', 'Month', 'Year', 'GGR']].head(10))
-            st.write(f"Total rows: {len(df_filtered)}")
-            st.write(f"Total GGR: R {total_ggr:,.2f}")
+            st.markdown(generate_strategic_analysis(selected_view, yoy, total_ggr, total_deposits, top_game))
         
     else:
         st.warning("No relevant data found. The file may be empty or skipped.")
