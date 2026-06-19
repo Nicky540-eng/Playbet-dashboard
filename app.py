@@ -14,7 +14,7 @@ month_order = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
 
 YEAR_COLORS = {"2024": "#3498db", "2025": "#e67e22", "2026": "#2ecc71"}
-DEPOSIT_YEAR_COLORS = {"2024": "#27ae60", "2025": "#f1c40f", "2026": "#2ecc71"}  # Green shades for deposits
+DEPOSIT_YEAR_COLORS = {"2024": "#27ae60", "2025": "#f1c40f", "2026": "#2ecc71"}
 GAME_PALETTE = px.colors.qualitative.Vivid
 
 # --- BULLETPROOF DATA LOADER (NATIVE EXCEL READING) ---
@@ -24,19 +24,15 @@ def load_data(uploaded_files):
         if pd.isna(val):
             return 0.0
         
-        # 1. Native Excel Numbers
         if isinstance(val, (int, float)):
             return float(val)
             
-        # 2. Clean the string
         s = str(val).strip()
         s = re.sub(r'[\s\xa0\n\r]+', '', s)
         
-        # 3. Handle negative numbers in parentheses like (1,278.00)
         if s.startswith('(') and s.endswith(')'):
             s = '-' + s[1:-1]
         
-        # 4. Handle SA number format with commas and decimals
         if ',' in s:
             if '.' in s:
                 s = s.replace(',', '')
@@ -54,7 +50,6 @@ def load_data(uploaded_files):
         except ValueError:
             return 0.0
 
-    # --- Special date parser for January 2025 ---
     def parse_jan2025_date(date_val):
         if pd.isna(date_val):
             return None
@@ -97,7 +92,6 @@ def load_data(uploaded_files):
     diagnostics = {"gross_col_used": "None", "paid_in_col_used": "None", "fallback_used": False, "items_skipped": []}
 
     def process_raw_dataframe(df_raw, source_name):
-        # Robust Header Finder
         header_idx = None
         for i, row in df_raw.iterrows():
             row_clean = [str(x).strip().lower() for x in row.values]
@@ -111,13 +105,11 @@ def load_data(uploaded_files):
         df = df_raw.iloc[header_idx+1:].copy()
         df.columns = [str(c).strip() for c in df_raw.iloc[header_idx].values]
         
-        # Dynamic Shop Column
         shop_col = next((c for c in df.columns if str(c).lower().strip() == 'shop'), None)
         if not shop_col: return None
         
         df['Shop'] = df[shop_col].astype(str).replace({'Potch': 'Potchefstroom'}).str.strip()
         
-        # Dynamic Gross Win Column
         gross_col = None
         for c in df.columns:
             clean_c = re.sub(r'[\s\n\r_]+', '', str(c).lower())
@@ -132,16 +124,13 @@ def load_data(uploaded_files):
             diagnostics["fallback_used"] = True
             df['GGR'] = 0.0
         
-        # --- EXTRACT PAID IN (DEPOSITS) ---
         paid_in_col = None
         for c in df.columns:
             clean_c = re.sub(r'[\s\n\r_]+', '', str(c).lower())
-            # Look for 'paid in' or 'paidin' 
             if clean_c in ['paidin', 'paid in']:
                 paid_in_col = c
                 break
         
-        # If not found, look for any column with 'paid' in name
         if paid_in_col is None:
             for c in df.columns:
                 clean_c = re.sub(r'[\s\n\r_]+', '', str(c).lower())
@@ -155,7 +144,6 @@ def load_data(uploaded_files):
         else:
             df['Deposits'] = 0.0
         
-        # Dynamic Date Column
         date_col = next((c for c in df.columns if 'firstslip' in str(c).lower().replace(' ', '') or 'date' in str(c).lower()), None)
         if date_col:
             if 'jan' in source_name.lower():
@@ -170,7 +158,9 @@ def load_data(uploaded_files):
         else:
             return None
         
-        return df[df['Shop'].isin(BRANCHES)]
+        # Reset index before returning to avoid duplicate index issues
+        result = df[df['Shop'].isin(BRANCHES)]
+        return result.reset_index(drop=True)
 
     for file in uploaded_files:
         try:
@@ -201,7 +191,20 @@ def load_data(uploaded_files):
         except Exception as e:
             st.error(f"Error loading {file.name}: {e}")
             
-    final_df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+    # Fix: Use ignore_index=True and ensure all DataFrames have same columns
+    if all_data:
+        # Ensure all DataFrames have the same columns
+        for i, df in enumerate(all_data):
+            # Add missing columns if any
+            for col in ['Shop', 'Game', 'GGR', 'Deposits', 'Year', 'Month', 'MonthNum']:
+                if col not in df.columns:
+                    df[col] = 0.0 if col in ['GGR', 'Deposits'] else ''
+            all_data[i] = df[['Shop', 'Game', 'GGR', 'Deposits', 'Year', 'Month', 'MonthNum']]
+        
+        final_df = pd.concat(all_data, ignore_index=True)
+    else:
+        final_df = pd.DataFrame()
+    
     return final_df, diagnostics
 
 # --- ADAPTIVE ANALYTICS ENGINE ---
@@ -265,7 +268,6 @@ if files:
         df = df_uploaded
 
     if not df.empty:
-        # --- NEW: TIME FILTERS ---
         available_months = sorted(df['Month'].unique(), key=lambda m: month_order.index(m) if m in month_order else 0)
         available_years = sorted(df['Year'].unique())
         
@@ -281,7 +283,6 @@ if files:
         nav_options = ["All Branches Dashboard"] + BRANCHES
         selected_view = st.sidebar.radio("Select Branch Analysis:", nav_options)
         
-        # Apply filters
         df_filtered = df if selected_view == "All Branches Dashboard" else df[df['Shop'] == selected_view]
         if selected_year != "All Time":
             df_filtered = df_filtered[df_filtered['Year'] == selected_year]
@@ -292,7 +293,6 @@ if files:
         total_deposits = df_filtered['Deposits'].sum() if 'Deposits' in df_filtered.columns else 0
         top_game = df_filtered.groupby('Game')['GGR'].sum().idxmax() if not df_filtered.empty else "N/A"
         
-        # Calculate YoY only if viewing All Time
         yoy = 0.0
         if selected_year == "All Time":
             years = sorted(df_filtered['Year'].unique())
@@ -319,7 +319,6 @@ if files:
         st.subheader("Deposits (Paid In): Multi-Year Stacked Comparison")
         chart_data_deposits = df_filtered.groupby(['MonthNum', 'Month', 'Year'])['Deposits'].sum().reset_index().sort_values('MonthNum')
         
-        # Use different color scheme for deposits (green shades)
         fig_deposits = px.bar(chart_data_deposits, x='Month', y='Deposits', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=DEPOSIT_YEAR_COLORS)
         fig_deposits.update_layout(xaxis_title=None, yaxis_title="Deposits / Paid In (ZAR)")
         st.plotly_chart(fig_deposits, use_container_width=True)
