@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import warnings
+import re
+from datetime import datetime
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Playbet Performance", layout="wide")
@@ -14,73 +16,204 @@ month_order = ["January", "February", "March", "April", "May", "June",
 YEAR_COLORS = {"2024": "#3498db", "2025": "#e67e22", "2026": "#2ecc71"}
 GAME_PALETTE = px.colors.qualitative.Vivid
 
-# --- DATA LOADER ---
+# --- BULLETPROOF DATA LOADER (NATIVE EXCEL READING) ---
 @st.cache_data
 def load_data(uploaded_files):
+    def robust_clean(val):
+        if pd.isna(val):
+            return 0.0
+        
+        # 1. Native Excel Numbers
+        if isinstance(val, (int, float)):
+            return float(val)
+            
+        # 2. Clean the string
+        s = str(val).strip()
+        s = re.sub(r'[\s\xa0\n\r]+', '', s)
+        
+        # 3. Handle negative numbers in parentheses like (1,278.00)
+        if s.startswith('(') and s.endswith(')'):
+            s = '-' + s[1:-1]
+        
+        # 4. Handle SA number format with commas and decimals
+        # Examples: "5,216,807.11" or "3,928.15" or "-1,278.00"
+        # Remove commas used as thousand separators, keep decimal points
+        if ',' in s:
+            # If there's a dot as well, commas are thousand separators
+            if '.' in s:
+                s = s.replace(',', '')  # Remove all commas
+            else:
+                # No dot, commas could be decimal or thousand separators
+                # If the comma is the last separator, it's a decimal
+                parts = s.split(',')
+                if len(parts[-1]) <= 2:  # Last part has 1-2 digits
+                    s = s.replace(',', '.')  # Decimal
+                else:
+                    s = s.replace(',', '')  # Thousand separator
+        
+        # 5. Remove any remaining commas
+        s = s.replace(',', '')
+        
+        try:
+            return float(s)
+        except ValueError:
+            return 0.0
+
+    # --- Special date parser for January 2025 ---
+    def parse_jan2025_date(date_val):
+        """Special parser for January 2025 dates like '01/01/25 14:36:23'"""
+        if pd.isna(date_val):
+            return None
+        
+        if isinstance(date_val, (pd.Timestamp, datetime)):
+            return date_val
+            
+        date_str = str(date_val).strip()
+        
+        # Try to parse as dd/mm/yy HH:MM:SS
+        try:
+            parts = date_str.split()
+            if len(parts) >= 2:
+                date_parts = parts[0].split('/')
+                time_parts = parts[1].split(':')
+                
+                if len(date_parts) == 3 and len(time_parts) >= 2:
+                    day = int(date_parts[0])
+                    month = int(date_parts[1])
+                    year = int(date_parts[2])
+                    if year < 100:
+                        year += 2000  # Convert '25' to '2025'
+                    hour = int(time_parts[0])
+                    minute = int(time_parts[1])
+                    second = int(time_parts[2]) if len(time_parts) > 2 else 0
+                    
+                    return pd.Timestamp(year=year, month=month, day=day, 
+                                       hour=hour, minute=minute, second=second)
+        except:
+            pass
+        
+        # Fallback to pandas
+        try:
+            return pd.to_datetime(date_str, format='%d/%m/%y %H:%M:%S', errors='coerce')
+        except:
+            try:
+                return pd.to_datetime(date_str, dayfirst=True, errors='coerce')
+            except:
+                return None
+
     all_data = []
+    diagnostics = {"gross_col_used": "None", "fallback_used": False, "items_skipped": []}
+
+    def process_raw_dataframe(df_raw, source_name):
+        # Robust Header Finder
+        header_idx = None
+        for i, row in df_raw.iterrows():
+            row_clean = [str(x).strip().lower() for x in row.values]
+            if 'shop' in row_clean and 'game' in row_clean:
+                header_idx = i
+                break
+                
+        if header_idx is None: 
+            return None
+        
+        df = df_raw.iloc[header_idx+1:].copy()
+        df.columns = [str(c).strip() for c in df_raw.iloc[header_idx].values]
+        
+        # Dynamic Shop Column
+        shop_col = next((c for c in df.columns if str(c).lower().strip() == 'shop'), None)
+        if not shop_col: return None
+        
+        df['Shop'] = df[shop_col].astype(str).replace({'Potch': 'Potchefstroom'}).str.strip()
+        
+        # Dynamic Gross Win Column
+        gross_col = None
+        for c in df.columns:
+            clean_c = re.sub(r'[\s\n\r_]+', '', str(c).lower())
+            if clean_c in ['grosswin', 'ggr', 'grossrevenue', 'gross']:
+                gross_col = c
+                break
+        
+        if gross_col:
+            diagnostics["gross_col_used"] = gross_col
+            df['GGR'] = df[gross_col].apply(robust_clean)
+        else:
+            diagnostics["fallback_used"] = True
+            df['GGR'] = 0.0
+        
+        # Dynamic Date Column
+        date_col = next((c for c in df.columns if 'firstslip' in str(c).lower().replace(' ', '') or 'date' in str(c).lower()), None)
+        if date_col:
+            # Use special parser for January 2025
+            if 'jan' in source_name.lower():
+                df['First Slip Issued'] = df[date_col].apply(parse_jan2025_date)
+            else:
+                df['First Slip Issued'] = pd.to_datetime(df[date_col], errors='coerce', dayfirst=True)
+            
+            df = df.dropna(subset=['First Slip Issued'])
+            df['Year'] = df['First Slip Issued'].dt.year.astype(int).astype(str)
+            df['Month'] = df['First Slip Issued'].dt.strftime('%B')
+            df['MonthNum'] = df['First Slip Issued'].dt.month
+        else:
+            return None
+        
+        return df[df['Shop'].isin(BRANCHES)]
+
     for file in uploaded_files:
         try:
-            xl = pd.ExcelFile(file)
-            for sheet in xl.sheet_names:
-                df_raw = pd.read_excel(file, sheet_name=sheet, header=None)
-                header_idx = next((i for i, row in df_raw.iterrows() if 'Shop' in row.values and 'Game' in row.values), None)
-                if header_idx is None: continue
-                
-                df = pd.read_excel(file, sheet_name=sheet, header=header_idx)
-                df.columns = [str(c).strip() for c in df.columns]
-                
-                df['Shop'] = df['Shop'].astype(str).replace({'Potch': 'Potchefstroom'})
-                
-                for col in ['Paid In', 'Paid Out']:
-                    if col in df.columns:
-                        df[col] = pd.to_numeric(df[col].replace({',': ''}, regex=True), errors='coerce')
-                df['GGR'] = df['Paid In'] - df['Paid Out']
-                
-                df['First Slip Issued'] = pd.to_datetime(df['First Slip Issued'], errors='coerce', format='mixed')
-                df['Year'] = df['First Slip Issued'].dt.year.fillna(0).astype(int).astype(str)
-                df['Month'] = df['First Slip Issued'].dt.strftime('%B')
-                df['MonthNum'] = df['First Slip Issued'].dt.month
-                
-                df = df[df['Shop'].isin(BRANCHES)]
-                all_data.append(df)
+            filename = file.name.lower()
+            
+            if filename.endswith('.csv'):
+                if 'user' in filename and 'excl' not in filename:
+                    diagnostics["items_skipped"].append(file.name)
+                    continue
+                df_raw = pd.read_csv(file, header=None)
+                processed_df = process_raw_dataframe(df_raw, file.name)
+                if processed_df is not None and not processed_df.empty:
+                    all_data.append(processed_df)
+
+            elif filename.endswith(('.xls', '.xlsx')):
+                xl = pd.ExcelFile(file)
+                for sheet in xl.sheet_names:
+                    sheet_lower = str(sheet).lower()
+                    if 'user' in sheet_lower and 'excl' not in sheet_lower:
+                        diagnostics["items_skipped"].append(f"Tab: {sheet}")
+                        continue
+                    
+                    df_raw = pd.read_excel(file, sheet_name=sheet, header=None)
+                    processed_df = process_raw_dataframe(df_raw, f"{file.name} - {sheet}")
+                    if processed_df is not None and not processed_df.empty:
+                        all_data.append(processed_df)
+                        
         except Exception as e:
-            st.error(f"Error loading data: {e}")
-    return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+            st.error(f"Error loading {file.name}: {e}")
+            
+    final_df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+    return final_df, diagnostics
 
 # --- ADAPTIVE ANALYTICS ENGINE ---
 def generate_strategic_analysis(branch_name, yoy, total_ggr, top_game):
-    # Fallback for "All Branches" view
     display_name = "the overall network" if branch_name == "All Branches Dashboard" else f"the {branch_name} branch"
-    
-    insights = []
-    insights.append(f"### 📊 Tailored Action Plan: {branch_name}")
+    insights = [f"### 📊 Tailored Action Plan: {branch_name}"]
 
-    # 1. Dynamic Growth Tiers
     if yoy > 20:
         insights.append(f"**🚀 Hyper-Growth Mode ({yoy:+.1f}%):** {display_name} is experiencing exceptional momentum. \n* **Action:** Shift strategy from acquisition to maximizing Lifetime Value (LTV). Consider launching VIP reward tiers to lock in the high-rollers driving this surge.")
     elif 0 <= yoy <= 20:
         insights.append(f"**📈 Steady Expansion ({yoy:+.1f}%):** {display_name} is showing healthy, sustainable growth. \n* **Action:** Focus on cross-selling. Push localized promotions to convert casual players into daily visitors to bump up the average handle.")
     elif -15 < yoy < 0:
-        insights.append(f"**⚠️ Early Warning ({yoy:+.1f}%):** Revenue has cooled slightly. \n* **Action:** Deploy immediate reactivation campaigns (e.g., targeted SMS promos or deposit matches) targeting lapsed players in this specific area.")
+        insights.append(f"**⚠️ Early Warning ({yoy:+.1f}%):** Revenue has cooled slightly. \n* **Action:** Deploy immediate reactivation campaigns targeting lapsed players in this specific area.")
     else:
         insights.append(f"**🚨 Critical Decline ({yoy:+.1f}%):** {display_name} requires immediate intervention. \n* **Action:** Conduct a strict operational audit. Assess local competitor promotions, review branch overheads, and consider aggressive grassroots marketing to rebuild foot traffic.")
 
-    # 2. Dynamic Game Strategy
-    insights.append(f"**🎯 Product Optimization:** With **'{top_game}'** dominating the revenue share, ensure terminal availability and uptime for this game is at 100% during peak hours. Train staff to introduce '{top_game}' players to adjacent, higher-margin games.")
-
+    insights.append(f"**🎯 Product Optimization:** With **'{top_game}'** dominating the revenue share, ensure terminal availability and uptime for this game is at 100% during peak hours.")
     return "\n\n".join(insights)
 
 # --- APP LAYOUT ---
-# 1. Initialize 2026 Manual Ledger in Session State
 if 'manual_2026_data' not in st.session_state:
-    st.session_state.manual_2026_data = pd.DataFrame(columns=[
-        'Shop', 'Game', 'GGR', 'Year', 'Month', 'MonthNum'
-    ])
+    st.session_state.manual_2026_data = pd.DataFrame(columns=['Shop', 'Game', 'GGR', 'Year', 'Month', 'MonthNum'])
 
 st.sidebar.header("Navigation")
 files = st.sidebar.file_uploader("Upload Excel/CSV", accept_multiple_files=True, type=["xlsx", "csv"])
 
-# 2. Add 2026 Data Entry Section to Sidebar
 st.sidebar.markdown("---")
 st.sidebar.header("📥 Enter 2026 Actuals")
 
@@ -91,64 +224,70 @@ entry_ggr = st.sidebar.number_input("Enter GGR Amount (R):", min_value=0.0, form
 
 if st.sidebar.button("Append to 2026 Ledger"):
     month_num = month_order.index(entry_month) + 1
-    new_row = pd.DataFrame([{
-        'Shop': entry_shop,
-        'Game': entry_game,
-        'GGR': entry_ggr,
-        'Year': '2026',
-        'Month': entry_month,
-        'MonthNum': month_num
-    }])
+    new_row = pd.DataFrame([{'Shop': entry_shop, 'Game': entry_game, 'GGR': entry_ggr, 'Year': '2026', 'Month': entry_month, 'MonthNum': month_num}])
     st.session_state.manual_2026_data = pd.concat([st.session_state.manual_2026_data, new_row], ignore_index=True)
     st.sidebar.success(f"Added R {entry_ggr:,.2f} for {entry_month}!")
 
-# Clear button to reset manual entries if needed
 if st.sidebar.button("Reset 2026 Ledger"):
     st.session_state.manual_2026_data = pd.DataFrame(columns=['Shop', 'Game', 'GGR', 'Year', 'Month', 'MonthNum'])
     st.rerun()
 
-
 # --- MAIN RUN LOGIC ---
 if files:
-    df_uploaded = load_data(files)
+    df_uploaded, diagnostics = load_data(files)
     
-    # 3. Combine uploaded data with manual 2026 entries
     if not st.session_state.manual_2026_data.empty:
         df = pd.concat([df_uploaded, st.session_state.manual_2026_data], ignore_index=True)
     else:
         df = df_uploaded
 
     if not df.empty:
+        # --- NEW: TIME FILTERS ---
+        available_months = sorted(df['Month'].unique(), key=lambda m: month_order.index(m) if m in month_order else 0)
+        available_years = sorted(df['Year'].unique())
+        
+        st.sidebar.markdown("---")
+        st.sidebar.header("⏳ Filter by Time")
+        selected_year = st.sidebar.selectbox("Select Year:", ["All Time"] + available_years)
+        
+        if selected_year != "All Time":
+            selected_month = st.sidebar.selectbox("Select Month:", ["All Months"] + available_months)
+        else:
+            selected_month = "All Months"
+
         nav_options = ["All Branches Dashboard"] + BRANCHES
         selected_view = st.sidebar.radio("Select Branch Analysis:", nav_options)
         
+        # Apply filters
         df_filtered = df if selected_view == "All Branches Dashboard" else df[df['Shop'] == selected_view]
+        if selected_year != "All Time":
+            df_filtered = df_filtered[df_filtered['Year'] == selected_year]
+        if selected_month != "All Months":
+            df_filtered = df_filtered[df_filtered['Month'] == selected_month]
         
-        # --- METRICS ---
         total_ggr = df_filtered['GGR'].sum()
         top_game = df_filtered.groupby('Game')['GGR'].sum().idxmax() if not df_filtered.empty else "N/A"
         
-        years = sorted(df_filtered['Year'].unique())
+        # Calculate YoY only if viewing All Time
         yoy = 0.0
-        if len(years) >= 2:
-            curr = df_filtered[df_filtered['Year'] == years[-1]]['GGR'].sum()
-            prev = df_filtered[df_filtered['Year'] == years[-2]]['GGR'].sum()
-            yoy = ((curr - prev) / prev) * 100 if prev != 0 else 0
+        if selected_year == "All Time":
+            years = sorted(df_filtered['Year'].unique())
+            if len(years) >= 2:
+                curr = df_filtered[df_filtered['Year'] == years[-1]]['GGR'].sum()
+                prev = df_filtered[df_filtered['Year'] == years[-2]]['GGR'].sum()
+                yoy = ((curr - prev) / prev) * 100 if prev != 0 else 0
             
         st.subheader(f"{selected_view} Performance")
         c1, c2, c3 = st.columns(3)
         c1.metric("Total GGR", f"R {total_ggr:,.2f}")
-        c2.metric("YoY Growth", f"{yoy:+.1f}%")
+        c2.metric("YoY Growth", f"{yoy:+.1f}%" if selected_year == "All Time" else "N/A (Filtered)")
         c3.metric("Top Performer", top_game)
         st.divider()
 
-        # --- VISUALIZATIONS ---
         st.subheader("GGR: Multi-Year Stacked Comparison")
         chart_data = df_filtered.groupby(['MonthNum', 'Month', 'Year'])['GGR'].sum().reset_index().sort_values('MonthNum')
         
-        # The chart dynamically receives the new "2026" entries here and updates automatically
-        fig = px.bar(chart_data, x='Month', y='GGR', color='Year', barmode='stack', 
-                     category_orders={"Month": month_order}, color_discrete_map=YEAR_COLORS)
+        fig = px.bar(chart_data, x='Month', y='GGR', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=YEAR_COLORS)
         fig.update_layout(xaxis_title=None, yaxis_title="Gross Gaming Revenue (ZAR)")
         st.plotly_chart(fig, use_container_width=True)
             
@@ -157,11 +296,26 @@ if files:
         fig_pie = px.pie(game_dist, values='GGR', names='Game', hole=0.4, color_discrete_sequence=GAME_PALETTE)
         st.plotly_chart(fig_pie, use_container_width=True)
         
-        # --- DYNAMIC STRATEGIC ANALYSIS ---
         with st.expander("📊 View Strategic Analysis & Solutions", expanded=True):
             st.markdown(generate_strategic_analysis(selected_view, yoy, total_ggr, top_game))
+            
+        # --- DIAGNOSTIC TOOL ---
+        st.divider()
+        with st.expander("🛠️ System Diagnostic (Verify Data Integrity)"):
+            if diagnostics["items_skipped"]:
+                st.warning(f"🚫 Ignored the following user-related files/tabs:\n" + "\n".join([f"- {f}" for f in diagnostics["items_skipped"]]))
+                
+            if diagnostics["fallback_used"]:
+                st.error("⚠️ The system could NOT find a column named 'Gross win' or 'GGR'.")
+            else:
+                st.success(f"✅ Successfully extracted GGR from the column: **{diagnostics['gross_col_used']}**")
+            
+            st.write("Preview of the final dataset (Check the exact values here!):")
+            st.dataframe(df_filtered[['Shop', 'Game', 'Month', 'Year', 'GGR']].head(10))
+            st.write(f"Total rows: {len(df_filtered)}")
+            st.write(f"Total GGR: R {total_ggr:,.2f}")
         
     else:
-        st.warning("No data found.")
+        st.warning("No relevant data found. The file may be empty or skipped.")
 else:
-    st.info("Please upload your data to begin.")
+    st.info("Please upload your Excel file to begin.")
