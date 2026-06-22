@@ -4,6 +4,9 @@ import plotly.express as px
 import warnings
 import re
 from datetime import datetime
+import os
+from pathlib import Path
+import glob
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Playbet Performance", layout="wide")
@@ -17,35 +20,146 @@ YEAR_COLORS = {"2024": "#3498db", "2025": "#e67e22", "2026": "#9b59b6"}
 DEPOSIT_YEAR_COLORS = {"2024": "#27ae60", "2025": "#f1c40f", "2026": "#8e44ad"} 
 GAME_PALETTE = px.colors.qualitative.Vivid
 
+# Define folders
+HISTORICAL_FOLDER = "historical_data"
+UPLOAD_FOLDER = "uploads"
+
+# Create folders if they don't exist
+Path(HISTORICAL_FOLDER).mkdir(exist_ok=True)
+Path(UPLOAD_FOLDER).mkdir(exist_ok=True)
+
 # The strict schema every file must conform to before merging
 TARGET_COLS = ['Shop', 'Game', 'Deposits', 'GGR', 'Paid Out Sum', 'GW Margin %', 'Net Win', 'Net Win Margin', 'Year', 'Month', 'MonthNum']
 
-# --- HELPER FUNCTIONS ---
+# --- PRECISION HELPER FUNCTIONS ---
+def clean_currency_string(val):
+    """
+    Clean currency strings with high precision handling:
+    - Removes currency symbols (R, $, €, £, ZAR)
+    - Removes whitespace and special characters
+    - Handles comma as thousand separator
+    - Handles comma as decimal separator (European format)
+    - Handles parentheses for negative values
+    - Converts to float with maximum precision
+    """
+    if pd.isna(val) or val == '' or val == 'nan' or val == 'NaN':
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    
+    # Convert to string and strip
+    s = str(val).strip()
+    
+    # Remove currency symbols (R, $, €, £, ZAR, etc.)
+    s = re.sub(r'[R$€£]', '', s)
+    s = re.sub(r'ZAR', '', s, flags=re.IGNORECASE)
+    
+    # Remove whitespace and special characters (keep only numbers, commas, dots, and minus signs)
+    s = re.sub(r'[\s\xa0\n\r\t]', '', s)
+    
+    # Handle parentheses for negative values (e.g., (1,234.56) → -1234.56)
+    if s.startswith('(') and s.endswith(')'):
+        s = '-' + s[1:-1]
+    
+    # Handle comma as thousand separator vs decimal separator
+    if ',' in s:
+        # Count commas and dots
+        comma_count = s.count(',')
+        dot_count = s.count('.')
+        
+        # If there's a comma and a dot, the comma is likely thousand separator
+        if comma_count > 0 and dot_count > 0:
+            # European format: comma is decimal, dot is thousand (e.g., 1.234,56)
+            if dot_count == 1 and comma_count == 1:
+                # If there's exactly one dot and one comma, check positions
+                dot_pos = s.index('.')
+                comma_pos = s.index(',')
+                if comma_pos > dot_pos:
+                    # European format: 1.234,56 → remove dot, replace comma with dot
+                    s = s.replace('.', '')
+                    s = s.replace(',', '.')
+                else:
+                    # US format: 1,234.56 → remove comma
+                    s = s.replace(',', '')
+            # US format: 1,234.56 → remove commas
+            elif dot_count >= 1 and comma_count >= 1:
+                # US format: remove commas
+                s = s.replace(',', '')
+            # European format: 1.234.567,89
+            elif comma_count == 1 and dot_count > 1:
+                s = s.replace('.', '')
+                s = s.replace(',', '.')
+            # Standard format: 1,234.56
+            else:
+                s = s.replace(',', '')
+        # If there's only a comma and no dot
+        elif comma_count > 0 and dot_count == 0:
+            # European format: 1234,56 → replace comma with dot
+            if len(s.split(',')[1]) <= 2:
+                s = s.replace(',', '.')
+            else:
+                # Thousands format: 1,234 → remove comma
+                s = s.replace(',', '')
+    
+    # Remove any remaining non-numeric characters (except dot and minus)
+    # But keep the dot for decimal
+    s = re.sub(r'[^\d.\-]', '', s)
+    
+    # Handle multiple dots - keep only the last one
+    if s.count('.') > 1:
+        parts = s.split('.')
+        s = ''.join(parts[:-1]) + '.' + parts[-1]
+    
+    try:
+        result = float(s)
+        return result
+    except ValueError:
+        # If conversion fails, try to extract number using regex
+        match = re.search(r'[\d,\.]+', s)
+        if match:
+            try:
+                # Clean the matched number
+                num_str = match.group()
+                num_str = num_str.replace(',', '')
+                return float(num_str)
+            except:
+                return 0.0
+        return 0.0
+
 def extract_date_from_filename(filename):
-    """Extracts month and year from filenames like 'January 2026.csv'"""
+    """Extracts month and year from filenames like 'January 2026.csv' or 'Cash Operations Summary - January 2026.csv'"""
+    # Try to find month name and year anywhere in the filename
     month_pattern = r'(January|February|March|April|May|June|July|August|September|October|November|December)\s*(\d{4})'
     match = re.search(month_pattern, filename, re.IGNORECASE)
     if match:
         month_name = match.group(1).capitalize()
         year = int(match.group(2))
         return datetime(year, month_order.index(month_name) + 1, 1)
-    return datetime(2026, 1, 1) # Fallback
-
-def robust_clean(val):
-    if pd.isna(val) or val == '': return 0.0
-    if isinstance(val, (int, float)): return float(val)
-    s = str(val).strip()
-    s = re.sub(r'[\s\xa0\n\rR]+', '', s)
-    if s.startswith('(') and s.endswith(')'): s = '-' + s[1:-1]
-    if ',' in s:
-        if '.' in s: s = s.replace(',', '')
-        else:
-            parts = s.split(',')
-            if len(parts[-1]) <= 2: s = s.replace(',', '.')
-            else: s = s.replace(',', '')
-    s = s.replace(',', '')
-    try: return float(s)
-    except: return 0.0
+    
+    # Try alternative: month name with underscore or dash
+    month_pattern2 = r'(January|February|March|April|May|June|July|August|September|October|November|December)[_\-\s]*(\d{4})'
+    match = re.search(month_pattern2, filename, re.IGNORECASE)
+    if match:
+        month_name = match.group(1).capitalize()
+        year = int(match.group(2))
+        return datetime(year, month_order.index(month_name) + 1, 1)
+    
+    # Try abbreviated month names (Jan, Feb, Mar, etc.)
+    month_abbr_pattern = r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{4})'
+    match = re.search(month_abbr_pattern, filename, re.IGNORECASE)
+    if match:
+        month_abbr = match.group(1).capitalize()
+        year = int(match.group(2))
+        month_map = {
+            'Jan': 'January', 'Feb': 'February', 'Mar': 'March', 'Apr': 'April',
+            'May': 'May', 'Jun': 'June', 'Jul': 'July', 'Aug': 'August',
+            'Sep': 'September', 'Oct': 'October', 'Nov': 'November', 'Dec': 'December'
+        }
+        month_name = month_map.get(month_abbr, 'January')
+        return datetime(year, month_order.index(month_name) + 1, 1)
+    
+    # If no date found, return None
+    return None
 
 def parse_jan2025_date(date_val):
     if pd.isna(date_val): return None
@@ -68,6 +182,63 @@ def parse_jan2025_date(date_val):
         try: return pd.to_datetime(date_str, dayfirst=True, errors='coerce')
         except: return None
 
+def find_deposit_column(df):
+    """Find the correct deposit column in the dataframe"""
+    deposit_keywords = [
+        'paid in sum', 'paidin', 'paid in', 'deposits', 'deposit', 
+        'cash in', 'cashin', 'payment', 'paid_sum',
+        'paid sum', 'paid-in', 'paid_in'
+    ]
+    
+    # First pass: exact match
+    for col in df.columns:
+        col_lower = str(col).lower().strip()
+        if col_lower in deposit_keywords:
+            return col
+    
+    # Second pass: partial match
+    for col in df.columns:
+        col_lower = str(col).lower().strip()
+        for keyword in deposit_keywords:
+            if keyword in col_lower:
+                return col
+    
+    # Third pass: look for any column with 'paid' or 'deposit'
+    for col in df.columns:
+        col_lower = str(col).lower().strip()
+        if 'paid' in col_lower or 'deposit' in col_lower:
+            return col
+    
+    return None
+
+def find_ggr_column(df):
+    """Find the correct GGR column in the dataframe"""
+    ggr_keywords = [
+        'gross win', 'grosswin', 'ggr', 'gross revenue', 
+        'grossrevenue', 'gross', 'win', 'revenue', 'grosswin'
+    ]
+    
+    # First pass: exact match
+    for col in df.columns:
+        col_lower = str(col).lower().strip()
+        if col_lower in ggr_keywords:
+            return col
+    
+    # Second pass: partial match
+    for col in df.columns:
+        col_lower = str(col).lower().strip()
+        for keyword in ggr_keywords:
+            if keyword in col_lower:
+                return col
+    
+    # Third pass: look for 'gross' or 'win'
+    for col in df.columns:
+        col_lower = str(col).lower().strip()
+        if 'gross' in col_lower or 'win' in col_lower:
+            return col
+    
+    return None
+
 def enforce_schema(df):
     """Ensures exact matching to TARGET_COLS and repairs merged Excel cells."""
     if df is None or df.empty: return None
@@ -78,7 +249,6 @@ def enforce_schema(df):
         df['Shop'] = df['Shop'].astype(str).str.strip().replace({'nan': None, 'NaN': None, 'None': None, '': None})
         df['Shop'] = df['Shop'].ffill() # Copies the last known shop down to blank rows
         df['Shop'] = df['Shop'].replace({'Potch': 'Potchefstroom'})
-        df = df[df['Shop'].isin(BRANCHES)]
     else:
         df['Shop'] = 'Unknown'
 
@@ -87,60 +257,70 @@ def enforce_schema(df):
         if col not in df.columns:
             df[col] = 0.0 if col not in ['Shop', 'Game', 'Year', 'Month'] else "Unknown"
             
-    # Clean numeric columns for math
+    # Clean numeric columns for math - using enhanced precision function
     num_cols = ['Deposits', 'Paid Out Sum', 'GGR', 'GW Margin %', 'Net Win', 'Net Win Margin']
     for col in num_cols:
-        df[col] = df[col].apply(robust_clean)
+        if col in df.columns:
+            df[col] = df[col].apply(clean_currency_string)
+        else:
+            df[col] = 0.0
 
     return df[TARGET_COLS].copy()
 
-# --- THE UNIFIED DATA LOADER ---
+def process_excel_dataframe(df_raw, source_name):
+    """High-accuracy Excel header hunting and data extraction."""
+    header_idx = None
+    for i, row in df_raw.iterrows():
+        row_clean = [str(x).strip().lower() for x in row.values]
+        if 'shop' in row_clean and 'game' in row_clean:
+            header_idx = i
+            break
+            
+    if header_idx is None: return None
+    
+    df = df_raw.iloc[header_idx+1:].copy()
+    df.columns = [str(c).strip() for c in df_raw.iloc[header_idx].values]
+    
+    shop_col = next((c for c in df.columns if str(c).lower().strip() == 'shop'), None)
+    if not shop_col: return None
+    df['Shop'] = df[shop_col]
+    
+    # Find GGR column
+    gross_col = find_ggr_column(df)
+    if gross_col:
+        df['GGR'] = df[gross_col]
+    else:
+        df['GGR'] = 0.0
+    
+    # Find Deposits column
+    deposit_col = find_deposit_column(df)
+    if deposit_col:
+        df['Deposits'] = df[deposit_col]
+    else:
+        df['Deposits'] = 0.0
+    
+    date_col = next((c for c in df.columns if 'firstslip' in str(c).lower().replace(' ', '') or 'date' in str(c).lower()), None)
+    if date_col:
+        if 'jan' in source_name.lower(): df['First Slip Issued'] = df[date_col].apply(parse_jan2025_date)
+        else: df['First Slip Issued'] = pd.to_datetime(df[date_col], errors='coerce', dayfirst=True)
+        
+        # ACCURACY FIX: Forward-fill dates to capture unlabelled rows beneath a grouped date
+        df['First Slip Issued'] = df['First Slip Issued'].ffill()
+        df = df.dropna(subset=['First Slip Issued'])
+        
+        df['Year'] = df['First Slip Issued'].dt.year.astype(int).astype(str)
+        df['Month'] = df['First Slip Issued'].dt.strftime('%B')
+        df['MonthNum'] = df['First Slip Issued'].dt.month
+    else:
+        return None
+        
+    return df
+
+# --- LOAD DATA FUNCTIONS ---
 @st.cache_data
 def load_data(uploaded_files):
+    """Original load_data function - handles both CSV and Excel files"""
     all_data = []
-
-    def process_excel_dataframe(df_raw, source_name):
-        """High-accuracy Excel header hunting and data extraction."""
-        header_idx = None
-        for i, row in df_raw.iterrows():
-            row_clean = [str(x).strip().lower() for x in row.values]
-            if 'shop' in row_clean and 'game' in row_clean:
-                header_idx = i
-                break
-                
-        if header_idx is None: return None
-        
-        df = df_raw.iloc[header_idx+1:].copy()
-        df.columns = [str(c).strip() for c in df_raw.iloc[header_idx].values]
-        
-        shop_col = next((c for c in df.columns if str(c).lower().strip() == 'shop'), None)
-        if not shop_col: return None
-        df['Shop'] = df[shop_col]
-        
-        gross_col = next((c for c in df.columns if re.sub(r'[\s\n\r_]+', '', str(c).lower()) in ['grosswin', 'ggr', 'grossrevenue', 'gross']), None)
-        df['GGR'] = df[gross_col] if gross_col else 0.0
-        
-        paid_in_col = next((c for c in df.columns if re.sub(r'[\s\n\r_]+', '', str(c).lower()) in ['paidin', 'paid in']), None)
-        if not paid_in_col:
-            paid_in_col = next((c for c in df.columns if 'paid' in re.sub(r'[\s\n\r_]+', '', str(c).lower()) and 'out' not in re.sub(r'[\s\n\r_]+', '', str(c).lower())), None)
-        df['Deposits'] = df[paid_in_col] if paid_in_col else 0.0
-        
-        date_col = next((c for c in df.columns if 'firstslip' in str(c).lower().replace(' ', '') or 'date' in str(c).lower()), None)
-        if date_col:
-            if 'jan' in source_name.lower(): df['First Slip Issued'] = df[date_col].apply(parse_jan2025_date)
-            else: df['First Slip Issued'] = pd.to_datetime(df[date_col], errors='coerce', dayfirst=True)
-            
-            # ACCURACY FIX: Forward-fill dates to capture unlabelled rows beneath a grouped date
-            df['First Slip Issued'] = df['First Slip Issued'].ffill()
-            df = df.dropna(subset=['First Slip Issued'])
-            
-            df['Year'] = df['First Slip Issued'].dt.year.astype(int).astype(str)
-            df['Month'] = df['First Slip Issued'].dt.strftime('%B')
-            df['MonthNum'] = df['First Slip Issued'].dt.month
-        else:
-            return None
-            
-        return df
 
     for file in uploaded_files:
         try:
@@ -152,35 +332,43 @@ def load_data(uploaded_files):
                 df = pd.read_csv(file)
                 df.columns = [str(c).strip() for c in df.columns]
                 
-                if 'Paid In Sum' in df.columns or 'Cashier' in df.columns:
-                    # Raw Cash Operations format
-                    df = df.rename(columns={'Paid In Sum': 'Deposits', 'Gross Win': 'GGR'})
-                    df['Date'] = file_date
-                else:
-                    # Standard/Cleaned CSV
-                    col_map = {}
-                    for c in df.columns:
-                        c_lower = str(c).lower().replace(' ', '')
-                        if 'paidin' in c_lower: col_map[c] = 'Deposits'
-                        elif 'grosswin' in c_lower or 'ggr' in c_lower: col_map[c] = 'GGR'
-                        elif 'date' in c_lower or 'firstslip' in c_lower: col_map[c] = 'Date'
-                    df = df.rename(columns=col_map)
-                    
-                    if 'Date' not in df.columns:
-                        df['Date'] = file_date
-                    else:
-                        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                # Find deposit column
+                deposit_col = find_deposit_column(df)
+                if deposit_col:
+                    df = df.rename(columns={deposit_col: 'Deposits'})
                 
-                # Derive Dates & Forward-Fill for safety
-                df['Date'] = df['Date'].ffill()
-                df = df.dropna(subset=['Date'])
-                if not df.empty:
-                    df['Year'] = df['Date'].dt.year.astype(int).astype(str)
-                    df['Month'] = df['Date'].dt.strftime('%B')
-                    df['MonthNum'] = df['Date'].dt.month
+                # Find GGR column
+                ggr_col = find_ggr_column(df)
+                if ggr_col:
+                    df = df.rename(columns={ggr_col: 'GGR'})
+                
+                # If no deposit or GGR found, try alternative column names
+                if 'Deposits' not in df.columns:
+                    if 'Paid In Sum' in df.columns:
+                        df = df.rename(columns={'Paid In Sum': 'Deposits'})
+                    elif 'Cashier' in df.columns:
+                        df['Deposits'] = 0.0
+                    else:
+                        df['Deposits'] = 0.0
+                
+                if 'GGR' not in df.columns:
+                    if 'Gross Win' in df.columns:
+                        df = df.rename(columns={'Gross Win': 'GGR'})
+                    else:
+                        df['GGR'] = 0.0
+                
+                # Assign date
+                df['Date'] = file_date
+                
+                # Derive Dates from the filename date
+                if not df.empty and file_date:
+                    df['Year'] = str(file_date.year)
+                    df['Month'] = file_date.strftime('%B')
+                    df['MonthNum'] = file_date.month
                     
                 df_clean = enforce_schema(df)
-                if df_clean is not None: all_data.append(df_clean)
+                if df_clean is not None: 
+                    all_data.append(df_clean)
 
             # --- PATH 2: LEGACY EXCEL FILES ---
             elif filename.endswith(('.xls', '.xlsx')):
@@ -203,6 +391,120 @@ def load_data(uploaded_files):
         final_df = pd.concat(all_data, ignore_index=True)
         return final_df
     return pd.DataFrame()
+
+@st.cache_data
+def load_historical_from_folder():
+    """Load all Excel files from the historical_data folder"""
+    all_data = []
+    file_count = 0
+    
+    # Get all Excel files from historical_data folder
+    excel_files = glob.glob(os.path.join(HISTORICAL_FOLDER, "*.xlsx")) + \
+                  glob.glob(os.path.join(HISTORICAL_FOLDER, "*.xls"))
+    
+    if not excel_files:
+        return pd.DataFrame(), 0
+    
+    for file_path in excel_files:
+        try:
+            filename = os.path.basename(file_path)
+            
+            # Read Excel file
+            xl = pd.ExcelFile(file_path)
+            for sheet in xl.sheet_names:
+                sheet_lower = str(sheet).lower()
+                if 'user' in sheet_lower and 'excl' not in sheet_lower:
+                    continue
+                
+                df_raw = pd.read_excel(file_path, sheet_name=sheet, header=None)
+                processed_df = process_excel_dataframe(df_raw, f"{filename} - {sheet}")
+                
+                df_clean = enforce_schema(processed_df)
+                if df_clean is not None:
+                    all_data.append(df_clean)
+                    file_count += 1
+                    
+        except Exception as e:
+            st.warning(f"⚠️ Could not load {file_path}: {str(e)}")
+    
+    if all_data:
+        final_df = pd.concat(all_data, ignore_index=True)
+        return final_df, file_count
+    return pd.DataFrame(), 0
+
+@st.cache_data
+def load_uploaded_csvs_from_folder():
+    """Load all CSV files from the uploads folder"""
+    all_data = []
+    file_count = 0
+    
+    # Get all CSV files from uploads folder
+    csv_files = glob.glob(os.path.join(UPLOAD_FOLDER, "*.csv"))
+    
+    if not csv_files:
+        return pd.DataFrame(), 0
+    
+    for file_path in csv_files:
+        try:
+            filename = os.path.basename(file_path)
+            file_date = extract_date_from_filename(filename)
+            
+            if file_date is None:
+                continue
+            
+            # Read CSV file
+            df = pd.read_csv(file_path)
+            df.columns = [str(c).strip() for c in df.columns]
+            
+            # Find and rename columns with precision
+            deposit_col = find_deposit_column(df)
+            if deposit_col:
+                df = df.rename(columns={deposit_col: 'Deposits'})
+            elif 'Paid In Sum' in df.columns:
+                df = df.rename(columns={'Paid In Sum': 'Deposits'})
+            elif 'Deposits' not in df.columns:
+                df['Deposits'] = 0.0
+            
+            ggr_col = find_ggr_column(df)
+            if ggr_col:
+                df = df.rename(columns={ggr_col: 'GGR'})
+            elif 'Gross Win' in df.columns:
+                df = df.rename(columns={'Gross Win': 'GGR'})
+            elif 'GGR' not in df.columns:
+                df['GGR'] = 0.0
+            
+            # Find Shop column
+            shop_col = None
+            for col in df.columns:
+                if str(col).lower().strip() in ['shop', 'branch', 'store', 'location']:
+                    shop_col = col
+                    break
+            
+            if shop_col:
+                df = df.rename(columns={shop_col: 'Shop'})
+            elif 'Shop' not in df.columns:
+                df['Shop'] = 'Malvern'
+            
+            # Assign date from filename
+            df['Date'] = file_date
+            
+            if not df.empty:
+                df['Year'] = str(file_date.year)
+                df['Month'] = file_date.strftime('%B')
+                df['MonthNum'] = file_date.month
+                
+            df_clean = enforce_schema(df)
+            if df_clean is not None:
+                all_data.append(df_clean)
+                file_count += 1
+                    
+        except Exception as e:
+            st.warning(f"⚠️ Could not load {file_path}: {str(e)}")
+    
+    if all_data:
+        final_df = pd.concat(all_data, ignore_index=True)
+        return final_df, file_count
+    return pd.DataFrame(), 0
 
 # --- ADAPTIVE ANALYTICS ENGINE ---
 def generate_strategic_analysis(branch_name, yoy, total_ggr, total_deposits, top_game):
@@ -228,11 +530,34 @@ st.title("Playbet Dashboard")
 if 'manual_2026_data' not in st.session_state:
     st.session_state.manual_2026_data = pd.DataFrame(columns=TARGET_COLS)
 
-st.sidebar.header("Navigation")
-files = st.sidebar.file_uploader("Upload Excel/CSV", accept_multiple_files=True, type=["xlsx", "csv"])
+st.sidebar.header("📤 Upload New CSV")
+uploaded_files = st.sidebar.file_uploader(
+    "Upload CSV files", 
+    accept_multiple_files=True, 
+    type=["csv"],
+    help="Upload CSV files to add to the dashboard. Files will be saved permanently."
+)
 st.sidebar.info("💡 Ensure CSV filenames include the month and year (e.g., 'May 2026.csv').")
 
-st.sidebar.markdown("---")
+# Save uploaded files to uploads folder
+if uploaded_files:
+    saved_files = []
+    for file in uploaded_files:
+        save_path = Path(UPLOAD_FOLDER) / file.name
+        if save_path.exists():
+            st.sidebar.warning(f"⚠️ {file.name} already exists. Skipping duplicate.")
+        else:
+            with open(save_path, 'wb') as f:
+                f.write(file.getbuffer())
+            saved_files.append(file.name)
+    
+    if saved_files:
+        st.sidebar.success(f"✅ Saved {len(saved_files)} file(s)")
+        st.rerun()
+
+st.sidebar.divider()
+
+# --- SIDEBAR: MANUAL ENTRY ---
 st.sidebar.header("📥 Enter Manual Actuals")
 entry_shop = st.sidebar.selectbox("Select Branch:", BRANCHES)
 entry_month = st.sidebar.selectbox("Select Month:", month_order)
@@ -255,21 +580,36 @@ if st.sidebar.button("Reset Ledger"):
     st.session_state.manual_2026_data = pd.DataFrame(columns=TARGET_COLS)
     st.rerun()
 
-# --- MAIN RUN LOGIC ---
-if files:
-    df_uploaded = load_data(files)
-    
-    if not st.session_state.manual_2026_data.empty:
-        df = pd.concat([df_uploaded, st.session_state.manual_2026_data], ignore_index=True)
-    else:
-        df = df_uploaded
+# --- SIDEBAR: FILTERS ---
+st.sidebar.divider()
+st.sidebar.header("⏳ Filters")
 
+# --- MAIN RUN LOGIC ---
+# Load historical data from folder
+historical_df, historical_file_count = load_historical_from_folder()
+
+# Load uploaded CSV files from uploads folder
+uploaded_df, uploaded_file_count = load_uploaded_csvs_from_folder()
+
+# Combine all data sources
+df_parts = []
+
+if not historical_df.empty:
+    df_parts.append(historical_df)
+
+if not uploaded_df.empty:
+    df_parts.append(uploaded_df)
+
+if not st.session_state.manual_2026_data.empty:
+    df_parts.append(st.session_state.manual_2026_data)
+
+if df_parts:
+    df = pd.concat(df_parts, ignore_index=True)
+    
     if not df.empty:
         available_months = sorted(df['Month'].unique(), key=lambda m: month_order.index(m) if m in month_order else 0)
         available_years = sorted(df['Year'].unique())
         
-        st.sidebar.markdown("---")
-        st.sidebar.header("⏳ Filter by Time")
         selected_year = st.sidebar.selectbox("Select Year:", ["All Time"] + available_years)
         selected_month = st.sidebar.selectbox("Select Month:", ["All Months"] + available_months) if selected_year != "All Time" else "All Months"
 
@@ -280,6 +620,7 @@ if files:
         if selected_year != "All Time": df_filtered = df_filtered[df_filtered['Year'] == selected_year]
         if selected_month != "All Months": df_filtered = df_filtered[df_filtered['Month'] == selected_month]
         
+        # Calculate totals with precision
         total_ggr = df_filtered['GGR'].sum()
         total_deposits = df_filtered['Deposits'].sum()
         top_game = df_filtered.groupby('Game')['GGR'].sum().idxmax() if not df_filtered.empty else "N/A"
@@ -327,4 +668,4 @@ if files:
     else:
         st.warning("No relevant data found. The file may be empty or invalid.")
 else:
-    st.info("Please upload your Excel or CSV file to begin. Filename MUST contain the month and year (e.g., 'May 2026.csv').")
+    st.info("📂 Please place your Excel files in the 'historical_data' folder or upload CSV files to begin.")
