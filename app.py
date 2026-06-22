@@ -239,6 +239,14 @@ def find_ggr_column(df):
     
     return None
 
+def clean_game_name(val):
+    """Clean game names to ensure they are string and not NaN"""
+    if pd.isna(val):
+        return "Unknown Game"
+    if isinstance(val, (int, float)):
+        return str(int(val)) if val == int(val) else str(val)
+    return str(val).strip()
+
 def enforce_schema(df):
     """Ensures exact matching to TARGET_COLS and repairs merged Excel cells."""
     if df is None or df.empty: return None
@@ -251,6 +259,12 @@ def enforce_schema(df):
         df['Shop'] = df['Shop'].replace({'Potch': 'Potchefstroom'})
     else:
         df['Shop'] = 'Unknown'
+
+    # Clean Game column
+    if 'Game' in df.columns:
+        df['Game'] = df['Game'].apply(clean_game_name)
+    else:
+        df['Game'] = 'Unknown Game'
 
     # Fill missing columns
     for col in TARGET_COLS:
@@ -620,6 +634,10 @@ if df_parts:
     numeric_cols = ['GGR', 'Deposits', 'Paid Out Sum', 'GW Margin %', 'Net Win', 'Net Win Margin']
     df = ensure_numeric(df, numeric_cols)
     
+    # Ensure Game column is clean and has no NaN
+    if 'Game' in df.columns:
+        df['Game'] = df['Game'].fillna('Unknown Game').astype(str)
+    
     if not df.empty:
         available_months = sorted(df['Month'].unique(), key=lambda m: month_order.index(m) if m in month_order else 0)
         available_years = sorted(df['Year'].unique())
@@ -634,18 +652,20 @@ if df_parts:
         if selected_year != "All Time": df_filtered = df_filtered[df_filtered['Year'] == selected_year]
         if selected_month != "All Months": df_filtered = df_filtered[df_filtered['Month'] == selected_month]
         
-        # Ensure filtered data is numeric
+        # Ensure filtered data is numeric and Game is clean
         df_filtered = ensure_numeric(df_filtered, ['GGR', 'Deposits'])
+        if 'Game' in df_filtered.columns:
+            df_filtered['Game'] = df_filtered['Game'].fillna('Unknown Game').astype(str)
         
-        # Calculate totals with precision - handle empty data
+        # Calculate totals with precision
         if not df_filtered.empty and len(df_filtered) > 0:
             total_ggr = df_filtered['GGR'].sum()
             total_deposits = df_filtered['Deposits'].sum()
-            # Get top game - handle case where Game column might have issues
+            # Get top game - safely
             try:
                 game_ggr = df_filtered.groupby('Game')['GGR'].sum()
                 top_game = game_ggr.idxmax() if not game_ggr.empty else "N/A"
-            except:
+            except Exception:
                 top_game = "N/A"
         else:
             total_ggr = 0.0
@@ -670,20 +690,29 @@ if df_parts:
 
         st.subheader("GGR: Multi-Year Stacked Comparison")
         chart_data = df_filtered.groupby(['MonthNum', 'Month', 'Year'])['GGR'].sum().reset_index().sort_values('MonthNum')
-        fig = px.bar(chart_data, x='Month', y='GGR', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=YEAR_COLORS)
-        fig.update_layout(xaxis_title=None, yaxis_title="Gross Gaming Revenue (ZAR)")
-        st.plotly_chart(fig, use_container_width=True)
+        if not chart_data.empty:
+            fig = px.bar(chart_data, x='Month', y='GGR', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=YEAR_COLORS)
+            fig.update_layout(xaxis_title=None, yaxis_title="Gross Gaming Revenue (ZAR)")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No data available for GGR chart")
         
         st.subheader("Deposits (Paid In): Multi-Year Stacked Comparison")
         chart_data_deposits = df_filtered.groupby(['MonthNum', 'Month', 'Year'])['Deposits'].sum().reset_index().sort_values('MonthNum')
-        fig_deposits = px.bar(chart_data_deposits, x='Month', y='Deposits', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=DEPOSIT_YEAR_COLORS)
-        fig_deposits.update_layout(xaxis_title=None, yaxis_title="Deposits / Paid In (ZAR)")
-        st.plotly_chart(fig_deposits, use_container_width=True)
+        if not chart_data_deposits.empty:
+            fig_deposits = px.bar(chart_data_deposits, x='Month', y='Deposits', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=DEPOSIT_YEAR_COLORS)
+            fig_deposits.update_layout(xaxis_title=None, yaxis_title="Deposits / Paid In (ZAR)")
+            st.plotly_chart(fig_deposits, use_container_width=True)
+        else:
+            st.warning("No data available for Deposits chart")
             
         st.subheader(f"Game Revenue Analysis")
         game_dist = df_filtered.groupby('Game')['GGR'].sum().reset_index()
-        fig_pie = px.pie(game_dist, values='GGR', names='Game', hole=0.4, color_discrete_sequence=GAME_PALETTE)
-        st.plotly_chart(fig_pie, use_container_width=True)
+        if not game_dist.empty and len(game_dist) > 0:
+            fig_pie = px.pie(game_dist, values='GGR', names='Game', hole=0.4, color_discrete_sequence=GAME_PALETTE)
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.warning("No game data available")
 
         st.divider()
         st.subheader("Raw Data Summary (Cleaned)")
