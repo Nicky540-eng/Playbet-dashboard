@@ -506,6 +506,16 @@ def load_uploaded_csvs_from_folder():
         return final_df, file_count
     return pd.DataFrame(), 0
 
+def ensure_numeric(df, columns):
+    """Ensure specified columns are numeric, converting if necessary"""
+    for col in columns:
+        if col in df.columns:
+            # Try to convert to numeric, coercing errors to NaN
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            # Fill NaN with 0
+            df[col] = df[col].fillna(0)
+    return df
+
 # --- ADAPTIVE ANALYTICS ENGINE ---
 def generate_strategic_analysis(branch_name, yoy, total_ggr, total_deposits, top_game):
     display_name = "the overall network" if branch_name == "All Branches Dashboard" else f"the {branch_name} branch"
@@ -606,6 +616,10 @@ if not st.session_state.manual_2026_data.empty:
 if df_parts:
     df = pd.concat(df_parts, ignore_index=True)
     
+    # Ensure numeric columns are properly typed
+    numeric_cols = ['GGR', 'Deposits', 'Paid Out Sum', 'GW Margin %', 'Net Win', 'Net Win Margin']
+    df = ensure_numeric(df, numeric_cols)
+    
     if not df.empty:
         available_months = sorted(df['Month'].unique(), key=lambda m: month_order.index(m) if m in month_order else 0)
         available_years = sorted(df['Year'].unique())
@@ -620,13 +634,26 @@ if df_parts:
         if selected_year != "All Time": df_filtered = df_filtered[df_filtered['Year'] == selected_year]
         if selected_month != "All Months": df_filtered = df_filtered[df_filtered['Month'] == selected_month]
         
-        # Calculate totals with precision
-        total_ggr = df_filtered['GGR'].sum()
-        total_deposits = df_filtered['Deposits'].sum()
-        top_game = df_filtered.groupby('Game')['GGR'].sum().idxmax() if not df_filtered.empty else "N/A"
+        # Ensure filtered data is numeric
+        df_filtered = ensure_numeric(df_filtered, ['GGR', 'Deposits'])
+        
+        # Calculate totals with precision - handle empty data
+        if not df_filtered.empty and len(df_filtered) > 0:
+            total_ggr = df_filtered['GGR'].sum()
+            total_deposits = df_filtered['Deposits'].sum()
+            # Get top game - handle case where Game column might have issues
+            try:
+                game_ggr = df_filtered.groupby('Game')['GGR'].sum()
+                top_game = game_ggr.idxmax() if not game_ggr.empty else "N/A"
+            except:
+                top_game = "N/A"
+        else:
+            total_ggr = 0.0
+            total_deposits = 0.0
+            top_game = "N/A"
         
         yoy = 0.0
-        if selected_year == "All Time":
+        if selected_year == "All Time" and not df_filtered.empty:
             years = sorted(df_filtered['Year'].unique())
             if len(years) >= 2:
                 curr = df_filtered[df_filtered['Year'] == years[-1]]['GGR'].sum()
