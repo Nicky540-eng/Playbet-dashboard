@@ -762,10 +762,26 @@ if df_parts:
             
         st.subheader(f"{selected_view} Performance")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total GGR", f"R {total_ggr:,.2f}")
-        c2.metric("Total Deposits (Paid In)", f"R {total_deposits:,.2f}")
-        c3.metric("YoY Growth", f"{yoy:+.1f}%" if selected_year == "All Time" else "N/A (Filtered)")
-        c4.metric("Top Performer", top_game)
+
+        # NOTE: st.metric() auto-abbreviates large numeric values (e.g. it can render
+        # 999065.52 as "0.999066M" instead of "R 999,065.52"). Using styled markdown
+        # cards instead of st.metric() guarantees the full, correctly formatted Rand
+        # value is always shown exactly as computed, regardless of Streamlit version.
+        def render_metric_card(col, label, value_str):
+            col.markdown(
+                f"""
+                <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                    <span style="font-size:0.875rem; color:rgba(49,51,63,0.6);">{label}</span>
+                    <span style="font-size:1.75rem; font-weight:600; line-height:1.2;">{value_str}</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        render_metric_card(c1, "Total GGR", f"R {total_ggr:,.2f}")
+        render_metric_card(c2, "Total Deposits (Paid In)", f"R {total_deposits:,.2f}")
+        render_metric_card(c3, "YoY Growth", f"{yoy:+.1f}%" if selected_year == "All Time" else "N/A (Filtered)")
+        render_metric_card(c4, "Top Performer", top_game)
         st.divider()
 
         st.subheader("GGR: Multi-Year Stacked Comparison")
@@ -773,6 +789,11 @@ if df_parts:
         if not chart_data.empty:
             fig = px.bar(chart_data, x='Month', y='GGR', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=YEAR_COLORS)
             fig.update_layout(xaxis_title=None, yaxis_title="Gross Gaming Revenue (ZAR)")
+            # Force full, comma-formatted Rand values in the hover tooltip and y-axis
+            # ticks instead of Plotly's default SI-prefix abbreviation (e.g. "0.999066M"
+            # instead of "R 999,065.52").
+            fig.update_traces(hovertemplate="<b>%{x} %{fullData.name}</b><br>GGR: R %{y:,.2f}<extra></extra>")
+            fig.update_layout(yaxis_tickformat=",.0f")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("No data available for GGR chart")
@@ -782,6 +803,9 @@ if df_parts:
         if not chart_data_deposits.empty:
             fig_deposits = px.bar(chart_data_deposits, x='Month', y='Deposits', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=DEPOSIT_YEAR_COLORS)
             fig_deposits.update_layout(xaxis_title=None, yaxis_title="Deposits / Paid In (ZAR)")
+            # Same fix as the GGR chart above - full Rand values in tooltip/axis, no abbreviation.
+            fig_deposits.update_traces(hovertemplate="<b>%{x} %{fullData.name}</b><br>Deposits: R %{y:,.2f}<extra></extra>")
+            fig_deposits.update_layout(yaxis_tickformat=",.0f")
             st.plotly_chart(fig_deposits, use_container_width=True)
         else:
             st.warning("No data available for Deposits chart")
