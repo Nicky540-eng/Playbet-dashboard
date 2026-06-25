@@ -281,54 +281,130 @@ def enforce_schema(df):
 
     return df[TARGET_COLS].copy()
 
-def process_excel_dataframe(df_raw, source_name):
-    """High-accuracy Excel header hunting and data extraction."""
-    header_idx = None
+# =====================================================================
+# FIXED EXCEL PARSING LOGIC
+#
+# Root cause of the doubling / corruption bug (kept here as documentation):
+#
+# 1) Each "...Excl users" summary sheet in these workbooks actually
+#    contains TWO stacked blocks on the same sheet - one for the prior
+#    year (e.g. 2024) and one for the current year (e.g. 2025), each
+#    with its own "Shop | Game | ... | Paid In | ... | Gross Win" header
+#    row. The old code searched for the FIRST header row only and then
+#    read everything below it (including the second year's own header
+#    and totals row) as a single table using the FIRST header's column
+#    positions. That silently misaligned and corrupted the second
+#    year's figures and let stray "All Branches Total" rows leak into
+#    the data as if they were per-shop rows.
+#
+# 2) One sheet per month is meant to hold the per-Shop/per-Game summary
+#    ("Excl users") while a sibling sheet holds the same revenue broken
+#    down per individual user ("Games and Users"). The old code decided
+#    which sheets to skip purely from the sheet NAME (skip if it
+#    contains "user" but not "excl"). For April, the workbook contains
+#    a sheet literally named 'April 24&25-Excl users ' that is actually
+#    structured as a per-USER breakdown (same layout as the "Games and
+#    Users" sheets), purely due to a typo in the sheet name. The old
+#    name-based filter kept it, so April's revenue was loaded twice -
+#    once from the real summary sheet and once from this mislabeled
+#    per-user sheet - producing the doubled GGR/Deposits for April.
+#
+# THE FIX:
+#   - Classify each sheet by its ACTUAL column structure (does row 0
+#     contain Game/Shop/User columns?), not by its name. Per-user
+#     sheets are always skipped for the branch/game summary, regardless
+#     of what they happen to be named.
+#   - For genuine summary sheets, find EVERY "Shop"+"Game" header row
+#     (one per year block) and parse each block independently using
+#     its OWN header positions, instead of treating the whole sheet as
+#     one table.
+# =====================================================================
+
+def is_per_user_sheet(df_raw):
+    """A per-user breakdown sheet has its header on row 0 with Game/Shop/User columns.
+    This is checked by ACTUAL structure, not by sheet name, since sheet names can be
+    mislabeled (e.g. a per-user sheet named '...Excl users')."""
+    if df_raw.empty:
+        return False
+    first_row = [str(x).strip().lower() for x in df_raw.iloc[0].values]
+    return 'game' in first_row and 'shop' in first_row and 'user' in first_row
+
+def find_summary_header_rows(df_raw):
+    """Find every row index where both 'Shop' and 'Game' appear as column headers.
+    Summary sheets in these workbooks stack one block per year, each with its own
+    header row, so there can be more than one."""
+    header_rows = []
     for i, row in df_raw.iterrows():
         row_clean = [str(x).strip().lower() for x in row.values]
         if 'shop' in row_clean and 'game' in row_clean:
-            header_idx = i
-            break
-            
-    if header_idx is None: return None
-    
-    df = df_raw.iloc[header_idx+1:].copy()
-    df.columns = [str(c).strip() for c in df_raw.iloc[header_idx].values]
-    
-    shop_col = next((c for c in df.columns if str(c).lower().strip() == 'shop'), None)
-    if not shop_col: return None
-    df['Shop'] = df[shop_col]
-    
-    # Find GGR column
-    gross_col = find_ggr_column(df)
-    if gross_col:
-        df['GGR'] = df[gross_col]
-    else:
-        df['GGR'] = 0.0
-    
-    # Find Deposits column
-    deposit_col = find_deposit_column(df)
-    if deposit_col:
-        df['Deposits'] = df[deposit_col]
-    else:
-        df['Deposits'] = 0.0
-    
-    date_col = next((c for c in df.columns if 'firstslip' in str(c).lower().replace(' ', '') or 'date' in str(c).lower()), None)
+            header_rows.append(i)
+    return header_rows
+
+def parse_summary_block(df_raw, header_idx, block_end_idx, source_name):
+    """Parse a single Shop/Game block (one year section) using ITS OWN header row,
+    so a second stacked year-block never inherits column positions from the first."""
+    header_row = [str(c).strip() for c in df_raw.iloc[header_idx].values]
+    block = df_raw.iloc[header_idx + 1: block_end_idx].copy()
+    block.columns = header_row
+    block = block.loc[:, ~block.columns.duplicated()]
+
+    shop_col = next((c for c in block.columns if str(c).lower().strip() == 'shop'), None)
+    if not shop_col:
+        return None
+    block['Shop'] = block[shop_col]
+
+    gross_col = find_ggr_column(block)
+    block['GGR'] = block[gross_col] if gross_col else 0.0
+
+    deposit_col = find_deposit_column(block)
+    block['Deposits'] = block[deposit_col] if deposit_col else 0.0
+
+    date_col = next((c for c in block.columns if 'firstslip' in str(c).lower().replace(' ', '') or 'date' in str(c).lower()), None)
     if date_col:
-        if 'jan' in source_name.lower(): df['First Slip Issued'] = df[date_col].apply(parse_jan2025_date)
-        else: df['First Slip Issued'] = pd.to_datetime(df[date_col], errors='coerce', dayfirst=True)
-        
-        # ACCURACY FIX: Forward-fill dates to capture unlabelled rows beneath a grouped date
-        df['First Slip Issued'] = df['First Slip Issued'].ffill()
-        df = df.dropna(subset=['First Slip Issued'])
-        
-        df['Year'] = df['First Slip Issued'].dt.year.astype(int).astype(str)
-        df['Month'] = df['First Slip Issued'].dt.strftime('%B')
-        df['MonthNum'] = df['First Slip Issued'].dt.month
+        if 'jan' in source_name.lower():
+            block['First Slip Issued'] = block[date_col].apply(parse_jan2025_date)
+        else:
+            block['First Slip Issued'] = pd.to_datetime(block[date_col], errors='coerce', dayfirst=True)
+
+        # Forward-fill dates to capture unlabelled rows beneath a grouped date,
+        # but ONLY within this block - never across a year boundary.
+        block['First Slip Issued'] = block['First Slip Issued'].ffill()
+        block = block.dropna(subset=['First Slip Issued'])
+
+        block['Year'] = block['First Slip Issued'].dt.year.astype(int).astype(str)
+        block['Month'] = block['First Slip Issued'].dt.strftime('%B')
+        block['MonthNum'] = block['First Slip Issued'].dt.month
     else:
         return None
-        
-    return df
+
+    # Drop any stray summary/header rows that sit between the data rows and the next
+    # year's header (e.g. "All Branches Total ...", or a second "Bet Slips / First
+    # Slip Issued / ..." mini-header+totals row). These are sheet-level rows, not
+    # per-shop rows, and forward-fill can otherwise drag a real branch name down
+    # onto them, corrupting Deposits/GGR with totals-row values.
+    block = block[block['Shop'].astype(str).str.strip().isin(BRANCHES)]
+
+    return block
+
+def process_excel_dataframe(df_raw, source_name):
+    """High-accuracy Excel header hunting and data extraction.
+    Handles sheets that stack multiple year-blocks (each with its own header row)
+    by parsing every block separately instead of treating the sheet as one table."""
+    header_rows = find_summary_header_rows(df_raw)
+    if not header_rows:
+        return None
+
+    parsed_blocks = []
+    for i, header_idx in enumerate(header_rows):
+        block_end_idx = header_rows[i + 1] if i + 1 < len(header_rows) else len(df_raw)
+        block = parse_summary_block(df_raw, header_idx, block_end_idx, source_name)
+        if block is not None and not block.empty:
+            parsed_blocks.append(block)
+
+    if not parsed_blocks:
+        return None
+
+    return pd.concat(parsed_blocks, ignore_index=True)
 
 # --- LOAD DATA FUNCTIONS ---
 @st.cache_data
@@ -388,13 +464,15 @@ def load_data(uploaded_files):
             elif filename.endswith(('.xls', '.xlsx')):
                 xl = pd.ExcelFile(file)
                 for sheet in xl.sheet_names:
-                    sheet_lower = str(sheet).lower()
-                    if 'user' in sheet_lower and 'excl' not in sheet_lower:
-                        continue 
-                    
                     df_raw = pd.read_excel(file, sheet_name=sheet, header=None)
+
+                    # Classify by ACTUAL structure, not by sheet name - a sheet can be
+                    # mislabeled (e.g. a per-user breakdown sheet named "...Excl users").
+                    if is_per_user_sheet(df_raw):
+                        continue
+
                     processed_df = process_excel_dataframe(df_raw, f"{file.name} - {sheet}")
-                    
+
                     df_clean = enforce_schema(processed_df)
                     if df_clean is not None: all_data.append(df_clean)
                         
@@ -426,13 +504,15 @@ def load_historical_from_folder():
             # Read Excel file
             xl = pd.ExcelFile(file_path)
             for sheet in xl.sheet_names:
-                sheet_lower = str(sheet).lower()
-                if 'user' in sheet_lower and 'excl' not in sheet_lower:
-                    continue
-                
                 df_raw = pd.read_excel(file_path, sheet_name=sheet, header=None)
+
+                # Classify by ACTUAL structure, not by sheet name - a sheet can be
+                # mislabeled (e.g. a per-user breakdown sheet named "...Excl users").
+                if is_per_user_sheet(df_raw):
+                    continue
+
                 processed_df = process_excel_dataframe(df_raw, f"{filename} - {sheet}")
-                
+
                 df_clean = enforce_schema(processed_df)
                 if df_clean is not None:
                     all_data.append(df_clean)
