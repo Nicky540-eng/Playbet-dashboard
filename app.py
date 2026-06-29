@@ -810,22 +810,159 @@ if df_parts:
         else:
             st.warning("No data available for Deposits chart")
             
-        st.subheader(f"Game Revenue Analysis")
-        game_dist = df_filtered.groupby('Game')['GGR'].sum().reset_index()
-        if not game_dist.empty and len(game_dist) > 0:
-            fig_pie = px.pie(game_dist, values='GGR', names='Game', hole=0.4, color_discrete_sequence=GAME_PALETTE)
-            st.plotly_chart(fig_pie, use_container_width=True)
+   # --- GAME REVENUE ANALYSIS (per-game, branch x year breakdown + month x year with variance) ---
+        st.subheader("Game Revenue Analysis")
+
+        # Game selector for this section only. Scoped to whatever the sidebar's
+        # branch/year/month filters have already narrowed df_filtered down to,
+        # so picking a game here drills into that same filtered slice.
+        available_games = sorted(df_filtered['Game'].dropna().unique().tolist()) if not df_filtered.empty else []
+
+        if not available_games:
+            st.info("💡 No game data available for the current filter selection.")
         else:
-            st.warning("No game data available")
+            selected_game = st.selectbox("Select Game:", available_games, key="game_revenue_game_select")
+
+            game_df = df_filtered[df_filtered['Game'] == selected_game]
+
+            if game_df.empty:
+                st.warning(f"No data found for '{selected_game}' in the current filter.")
+            else:
+                # --- Branch x Year summary table ---
+                st.markdown(f"**{selected_game} — GGR by Branch and Year**")
+
+                branch_year = game_df.pivot_table(
+                    index='Shop', columns='Year', values='GGR', aggfunc='sum', fill_value=0
+                ).astype(float)
+                # Order branches consistently and order year columns chronologically
+                branch_year = branch_year.reindex([b for b in BRANCHES if b in branch_year.index])
+                year_cols_sorted = sorted(branch_year.columns, key=lambda y: int(y))
+                branch_year = branch_year[year_cols_sorted]
+
+                # Overall total row across branches, plus an overall total column across years
+                branch_year.loc['All Branches'] = branch_year.sum(numeric_only=True)
+                branch_year['Overall Total'] = branch_year.sum(axis=1)
+
+                st.dataframe(
+                    branch_year.style.format({col: "R {:,.2f}" for col in branch_year.columns}),
+                    use_container_width=True
+                )
+
+                st.divider()
+
+                # --- Month-to-month table by year, with variance & variance % for every
+                #     consecutive year pair (e.g. 2025 vs 2024, 2026 vs 2025) ---
+                st.markdown(f"**{selected_game} — Month-to-Month GGR by Year (with Variance)**")
+
+                month_year = game_df.groupby(['MonthNum', 'Month', 'Year'])['GGR'].sum().reset_index()
+                month_year = month_year.sort_values('MonthNum')
+
+                if not month_year.empty:
+                    month_table = month_year.pivot_table(
+                        index='Month', columns='Year', values='GGR', aggfunc='sum', fill_value=0
+                    ).astype(float)
+                    month_table = month_table.reindex([m for m in month_order if m in month_table.index])
+                    year_cols_sorted2 = sorted(month_table.columns, key=lambda y: int(y))
+                    month_table = month_table[year_cols_sorted2]
+                    month_table['Total'] = month_table.sum(axis=1)
+
+                    # Build variance / variance % columns for every consecutive year pair.
+                    # e.g. with years [2024, 2025, 2026] this produces:
+                    #   Variance 2025 vs 2024, Growth % 2025 vs 2024
+                    #   Variance 2026 vs 2025, Growth % 2026 vs 2025
+                    variance_cols = []
+                    growth_cols = []
+                    for prev_y, curr_y in zip(year_cols_sorted2[:-1], year_cols_sorted2[1:]):
+                        var_col = f"Variance {curr_y} vs {prev_y}"
+                        growth_col = f"Growth % {curr_y} vs {prev_y}"
+                        month_table[var_col] = month_table[curr_y] - month_table[prev_y]
+                        month_table[growth_col] = (
+                            month_table[var_col] / month_table[prev_y].replace(0, pd.NA)
+                        ) * 100
+                        variance_cols.append(var_col)
+                        growth_cols.append(growth_col)
+
+                    # --- Color coding: green for positive variance/growth, red for negative ---
+                    def color_variance(val):
+                        if pd.isna(val):
+                            return ''
+                        color = '#27ae60' if val > 0 else '#c0392b' if val < 0 else 'gray'
+                        return f'color: {color}; font-weight: bold;'
+
+                    format_map = {col: "R {:,.2f}" for col in year_cols_sorted2}
+                    format_map['Total'] = "R {:,.2f}"
+                    for var_col in variance_cols:
+                        format_map[var_col] = "R {:,.2f}"
+                    for growth_col in growth_cols:
+                        format_map[growth_col] = "{:,.1f}%"
+
+                    styled_month_table = month_table.style.format(format_map, na_rep="N/A").map(
+                        color_variance, subset=variance_cols + growth_cols
+                    )
+
+                    st.dataframe(styled_month_table, use_container_width=True)
+                else:
+                    st.warning(f"No month-to-month data available for '{selected_game}'.")
 
         st.divider()
-        st.subheader("Raw Data Summary (Cleaned)")
-        st.dataframe(df_filtered[['Year', 'Month', 'Shop', 'Game', 'Deposits', 'Paid Out Sum', 'GGR', 'GW Margin %', 'Net Win', 'Net Win Margin']].head(100), use_container_width=True)
-        
-        with st.expander("📊 View Strategic Analysis & Solutions", expanded=True):
-            st.markdown(generate_strategic_analysis(selected_view, yoy, total_ggr, total_deposits, top_game))
-        
-    else:
-        st.warning("No relevant data found. The file may be empty or invalid.")
-else:
-    st.info("📂 Please place your Excel files in the 'historical_data' folder or upload CSV files to begin.")
+
+        # --- YEAR-OVER-YEAR GAME PERFORMANCE MATRIX (Green = Good, Red = Bad) ---
+        st.subheader("Year-Over-Year Game Performance Matrix")
+
+        # Create a pivot table showing GGR per game for each year
+        matrix_df = df_filtered.pivot_table(index='Game', columns='Year', values='GGR', aggfunc='sum').fillna(0)
+
+        if len(matrix_df.columns) >= 2:
+            # Sort year columns chronologically so consecutive pairs are correct
+            year_cols_matrix = sorted(matrix_df.columns, key=lambda y: int(y))
+            matrix_df = matrix_df[year_cols_matrix]
+            latest_year = year_cols_matrix[-1]
+
+            # Calculate variance & growth % for EVERY consecutive year pair present,
+            # e.g. with years [2024, 2025, 2026] this produces:
+            #   Variance 2025 vs 2024, Growth % 2025 vs 2024
+            #   Variance 2026 vs 2025, Growth % 2026 vs 2025
+            variance_cols = []
+            growth_cols = []
+            for prev_y, curr_y in zip(year_cols_matrix[:-1], year_cols_matrix[1:]):
+                var_col = f"Variance {curr_y} vs {prev_y}"
+                growth_col = f"Growth % {curr_y} vs {prev_y}"
+                matrix_df[var_col] = matrix_df[curr_y] - matrix_df[prev_y]
+                matrix_df[growth_col] = (matrix_df[var_col] / matrix_df[prev_y].replace(0, 1)) * 100
+                variance_cols.append(var_col)
+                growth_cols.append(growth_col)
+
+            # Sort so the highest revenue drivers (by the latest year) are at the top
+            matrix_df = matrix_df.sort_values(by=latest_year, ascending=False)
+
+            # --- The Styling Logic ---
+            def color_variance(val):
+                """Colors positive numbers green and negative numbers red"""
+                if pd.isna(val): return ''
+                color = '#27ae60' if val > 0 else '#c0392b' if val < 0 else 'gray'
+                return f'color: {color}; font-weight: bold;'
+
+            # Format EVERY year column present (not just the last two), otherwise any
+            # year outside the most recent two falls through unformatted as a raw float
+            # like "17478349.010000" instead of "R 17,478,349.01".
+            format_map = {year_col: "R {:,.2f}" for year_col in year_cols_matrix}
+            for var_col in variance_cols:
+                format_map[var_col] = "R {:,.2f}"
+            for growth_col in growth_cols:
+                format_map[growth_col] = "{:,.1f}%"
+
+            styled_matrix = matrix_df.style.format(format_map).map(
+                color_variance, subset=variance_cols + growth_cols
+            )
+
+            # Display the interactive, colored table
+            st.dataframe(styled_matrix, use_container_width=True)
+
+        else:
+            st.info("💡 To view the Year-Over-Year Conditional Matrix, please ensure 'All Time' or multiple years of data are available in your filter.")
+
+        st.divider()
+
+        # --- STRATEGIC ACTION PLAN (branch-level totals already calculated above) ---
+        st.subheader("📊 Strategic Action Plan")
+        st.markdown(generate_strategic_analysis(selected_view, yoy, total_ggr, total_deposits, top_game))
