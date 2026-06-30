@@ -240,12 +240,32 @@ def find_ggr_column(df):
     return None
 
 def clean_game_name(val):
-    """Clean game names to ensure they are string and not NaN"""
+    """Clean game names to ensure they are string and not NaN.
+
+    ACCURACY FIX: source files spell some game names inconsistently across
+    months (e.g. 'BETGAMES Lucky 6' in some sheets vs 'BetGames Lucky 6' in
+    others). Without normalization these become two separate entries in the
+    Game dropdown, silently fragmenting a single game's history - a branch,
+    year, or month can look "missing" simply because its rows were filed
+    under the other casing. We collapse names that are identical once
+    whitespace is collapsed and case is ignored, and always display the
+    cleaned name in a consistent canonical casing so previously-split data
+    re-merges into one entry."""
     if pd.isna(val):
         return "Unknown Game"
     if isinstance(val, (int, float)):
         return str(int(val)) if val == int(val) else str(val)
-    return str(val).strip()
+
+    s = str(val).strip()
+    # Collapse any internal multi-space runs (e.g. "Lucky  6" -> "Lucky 6")
+    s = re.sub(r'\s+', ' ', s)
+
+    # Known brand-name casing fixes: normalize regardless of how the source
+    # file capitalized it, so "BETGAMES", "Betgames", "BetGames" all merge.
+    s = re.sub(r'(?i)\bbetgames\b', 'BetGames', s)
+    s = re.sub(r'(?i)\bskypilot\b', 'SkyPilot', s)
+
+    return s
 
 def enforce_schema(df):
     """Ensures exact matching to TARGET_COLS and repairs merged Excel cells."""
@@ -850,55 +870,76 @@ if df_parts:
 
                 st.divider()
 
-                # --- Month-to-month table by year, with variance & variance % for every
-                #     consecutive year pair (e.g. 2025 vs 2024, 2026 vs 2025) ---
-                st.markdown(f"**{selected_game} — Month-to-Month GGR by Year (with Variance)**")
+                # --- Month-to-month table by year. Always shows all 12 months, with
+                #     0.00 placeholders for any month/year combo with no data (rather
+                #     than silently dropping the row). Each year's GGR cell is colored
+                #     green if higher than the same month in the prior year, red if
+                #     lower - but ONLY when both that month and the same month in the
+                #     prior year actually have real data. A 0.00 placeholder (game not
+                #     yet introduced / no activity that month) is left uncolored rather
+                #     than counted as a "decline" against a real prior value. ---
+                st.markdown(f"**{selected_game} — Month-to-Month GGR by Year**")
 
                 month_year = game_df.groupby(['MonthNum', 'Month', 'Year'])['GGR'].sum().reset_index()
                 month_year = month_year.sort_values('MonthNum')
 
                 if not month_year.empty:
+                    # IMPORTANT: do NOT pass fill_value=0 here - that would fill gaps
+                    # with 0 before we can tell a "no data" gap apart from a genuine
+                    # R0.00 result, making has_data below always True and breaking the
+                    # placeholder-vs-real-zero color distinction.
                     month_table = month_year.pivot_table(
-                        index='Month', columns='Year', values='GGR', aggfunc='sum', fill_value=0
-                    ).astype(float)
-                    month_table = month_table.reindex([m for m in month_order if m in month_table.index])
+                        index='Month', columns='Year', values='GGR', aggfunc='sum'
+                    )
+                    # FIX: reindex against the FULL month_order unconditionally, so
+                    # months with zero rows for this game still appear as a row (with
+                    # NaN, converted to 0.00 below) instead of being dropped entirely.
+                    month_table = month_table.reindex(month_order)
+
                     year_cols_sorted2 = sorted(month_table.columns, key=lambda y: int(y))
                     month_table = month_table[year_cols_sorted2]
-                    month_table['Total'] = month_table.sum(axis=1)
 
-                    # Build variance / variance % columns for every consecutive year pair.
-                    # e.g. with years [2024, 2025, 2026] this produces:
-                    #   Variance 2025 vs 2024, Growth % 2025 vs 2024
-                    #   Variance 2026 vs 2025, Growth % 2026 vs 2025
-                    variance_cols = []
-                    growth_cols = []
-                    for prev_y, curr_y in zip(year_cols_sorted2[:-1], year_cols_sorted2[1:]):
-                        var_col = f"Variance {curr_y} vs {prev_y}"
-                        growth_col = f"Growth % {curr_y} vs {prev_y}"
-                        month_table[var_col] = month_table[curr_y] - month_table[prev_y]
-                        month_table[growth_col] = (
-                            month_table[var_col] / month_table[prev_y].replace(0, pd.NA)
-                        ) * 100
-                        variance_cols.append(var_col)
-                        growth_cols.append(growth_col)
+                    # Track which (Month, Year) cells had real source rows BEFORE we
+                    # fill missing ones with 0.00, so coloring can tell a genuine R0.00
+                    # apart from a "no data this month" placeholder.
+                    has_data = month_table.notna()
+                    month_table = month_table.fillna(0.0).astype(float)
+                    month_table['Total'] = month_table[year_cols_sorted2].sum(axis=1)
 
-                    # --- Color coding: green for positive variance/growth, red for negative ---
-                    def color_variance(val):
-                        if pd.isna(val):
-                            return ''
-                        color = '#27ae60' if val > 0 else '#c0392b' if val < 0 else 'gray'
-                        return f'color: {color}; font-weight: bold;'
+                    # --- Color coding: green if this year's GGR for that month beat
+                    #     the most recent EARLIER year that actually has real data for
+                    #     that same month, red if it fell short. Comparing against the
+                    #     nearest available prior year (not just the immediately
+                    #     preceding column) means single-data-year games still get no
+                    #     coloring (nothing to compare), while games with a gap year
+                    #     still compare correctly across the gap. Cells with no real
+                    #     data this month, or no real prior-year data to compare
+                    #     against, are left uncolored. ---
+                    def color_yoy_cell(row):
+                        styles = pd.Series('', index=row.index)
+                        month_name = row.name
+                        for i, year_col in enumerate(year_cols_sorted2):
+                            if not has_data.loc[month_name, year_col]:
+                                continue  # this month is a placeholder for this year - leave uncolored
+                            # Find nearest earlier year (if any) that has real data for this month
+                            prev_val = None
+                            for prev_year_col in reversed(year_cols_sorted2[:i]):
+                                if has_data.loc[month_name, prev_year_col]:
+                                    prev_val = row[prev_year_col]
+                                    break
+                            if prev_val is None:
+                                continue  # no real prior-year data to compare against
+                            curr_val = row[year_col]
+                            if curr_val > prev_val:
+                                styles[year_col] = 'color: #27ae60; font-weight: bold;'
+                            elif curr_val < prev_val:
+                                styles[year_col] = 'color: #c0392b; font-weight: bold;'
+                        return styles
 
                     format_map = {col: "R {:,.2f}" for col in year_cols_sorted2}
                     format_map['Total'] = "R {:,.2f}"
-                    for var_col in variance_cols:
-                        format_map[var_col] = "R {:,.2f}"
-                    for growth_col in growth_cols:
-                        format_map[growth_col] = "{:,.1f}%"
 
-                    styled_month_table = month_table.style.format(format_map, na_rep="N/A").map(
-                        color_variance, subset=variance_cols + growth_cols
-                    )
+                    styled_month_table = month_table.style.format(format_map).apply(color_yoy_cell, axis=1)
 
                     st.dataframe(styled_month_table, use_container_width=True)
                 else:
