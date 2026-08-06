@@ -7,144 +7,233 @@ from datetime import datetime
 import os
 from pathlib import Path
 import glob
+from sqlalchemy import create_engine, text
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Playbet Performance", layout="wide")
 warnings.filterwarnings('ignore')
 
 BRANCHES = ["Malvern", "Potchefstroom", "Pretoria", "White River", "Randburg"]
-month_order = ["January", "February", "March", "April", "May", "June", 
+month_order = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
-
 YEAR_COLORS = {"2024": "#3498db", "2025": "#e67e22", "2026": "#9b59b6"}
-DEPOSIT_YEAR_COLORS = {"2024": "#27ae60", "2025": "#f1c40f", "2026": "#8e44ad"} 
+DEPOSIT_YEAR_COLORS = {"2024": "#27ae60", "2025": "#f1c40f", "2026": "#8e44ad"}
 GAME_PALETTE = px.colors.qualitative.Vivid
 
 # Define folders
 HISTORICAL_FOLDER = "historical_data"
 UPLOAD_FOLDER = "uploads"
-
-# Create folders if they don't exist
 Path(HISTORICAL_FOLDER).mkdir(exist_ok=True)
 Path(UPLOAD_FOLDER).mkdir(exist_ok=True)
 
 # The strict schema every file must conform to before merging
 TARGET_COLS = ['Shop', 'Game', 'Deposits', 'GGR', 'Paid Out Sum', 'GW Margin %', 'Net Win', 'Net Win Margin', 'Year', 'Month', 'MonthNum']
 
+# =====================================================================
+# NEON PERSISTENCE — manual entries and uploaded CSV rows are stored in
+# Neon so they survive Streamlit restarts (session state and the local
+# uploads folder are both ephemeral and get wiped on restart).
+# =====================================================================
+def _get_db_url():
+    url = ""
+    try:
+        url = st.secrets.get("DATABASE_URL", "")
+    except Exception:
+        url = ""
+    if not url:
+        url = os.environ.get("DATABASE_URL", "")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    if url.startswith("postgresql+psycopg://"):
+        url = url.replace("postgresql+psycopg://", "postgresql://", 1)
+    return url
+
+
+DATABASE_URL = _get_db_url()
+_engine = None
+if DATABASE_URL:
+    try:
+        _engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+        with _engine.begin() as _c:
+            _c.execute(text("""
+                CREATE TABLE IF NOT EXISTS dashboard_manual_entries (
+                    id SERIAL PRIMARY KEY,
+                    shop VARCHAR(120), game VARCHAR(200),
+                    deposits NUMERIC, ggr NUMERIC,
+                    year VARCHAR(8), month VARCHAR(20), monthnum INTEGER
+                )
+            """))
+            _c.execute(text("""
+                CREATE TABLE IF NOT EXISTS dashboard_uploaded_rows (
+                    id SERIAL PRIMARY KEY,
+                    source_file VARCHAR(300),
+                    shop VARCHAR(120), game VARCHAR(200),
+                    deposits NUMERIC, paid_out_sum NUMERIC, ggr NUMERIC,
+                    gw_margin NUMERIC, net_win NUMERIC, net_win_margin NUMERIC,
+                    year VARCHAR(8), month VARCHAR(20), monthnum INTEGER
+                )
+            """))
+    except Exception as e:
+        st.sidebar.warning(f"DB connection issue: {e}")
+
+
+def load_manual_entries_from_neon():
+    if _engine is None:
+        return pd.DataFrame(columns=TARGET_COLS)
+    try:
+        with _engine.connect() as c:
+            rows = c.execute(text(
+                "SELECT shop, game, deposits, ggr, year, month, monthnum FROM dashboard_manual_entries"
+            )).fetchall()
+        if not rows:
+            return pd.DataFrame(columns=TARGET_COLS)
+        return pd.DataFrame([{
+            'Shop': r[0], 'Game': r[1], 'Deposits': float(r[2] or 0), 'Paid Out Sum': 0.0,
+            'GGR': float(r[3] or 0), 'GW Margin %': 0.0, 'Net Win': 0.0, 'Net Win Margin': 0.0,
+            'Year': r[4], 'Month': r[5], 'MonthNum': int(r[6] or 0)
+        } for r in rows])
+    except Exception as e:
+        st.sidebar.warning(f"Could not load manual entries: {e}")
+        return pd.DataFrame(columns=TARGET_COLS)
+
+
+def save_manual_entry_to_neon(shop, game, deposits, ggr, year, month, monthnum):
+    if _engine is None:
+        return False
+    try:
+        with _engine.begin() as c:
+            c.execute(text("""
+                INSERT INTO dashboard_manual_entries (shop, game, deposits, ggr, year, month, monthnum)
+                VALUES (:s, :g, :d, :r, :y, :m, :mn)
+            """), {"s": shop, "g": game, "d": float(deposits), "r": float(ggr),
+                   "y": year, "m": month, "mn": int(monthnum)})
+        return True
+    except Exception as e:
+        st.sidebar.error(f"Could not save entry: {e}")
+        return False
+
+
+def clear_manual_entries_neon():
+    if _engine is None:
+        return
+    try:
+        with _engine.begin() as c:
+            c.execute(text("DELETE FROM dashboard_manual_entries"))
+    except Exception:
+        pass
+
+
+def save_uploaded_rows_to_neon(df_clean, source_file):
+    if _engine is None or df_clean is None or df_clean.empty:
+        return
+    try:
+        with _engine.begin() as c:
+            c.execute(text("DELETE FROM dashboard_uploaded_rows WHERE source_file = :f"),
+                      {"f": source_file})
+            for _, row in df_clean.iterrows():
+                c.execute(text("""
+                    INSERT INTO dashboard_uploaded_rows
+                        (source_file, shop, game, deposits, paid_out_sum, ggr,
+                         gw_margin, net_win, net_win_margin, year, month, monthnum)
+                    VALUES (:f, :shop, :game, :dep, :po, :ggr, :gw, :nw, :nwm, :y, :m, :mn)
+                """), {
+                    "f": source_file, "shop": row['Shop'], "game": row['Game'],
+                    "dep": float(row['Deposits']), "po": float(row['Paid Out Sum']),
+                    "ggr": float(row['GGR']), "gw": float(row['GW Margin %']),
+                    "nw": float(row['Net Win']), "nwm": float(row['Net Win Margin']),
+                    "y": str(row['Year']), "m": str(row['Month']), "mn": int(row['MonthNum'])
+                })
+    except Exception as e:
+        st.sidebar.warning(f"Could not save uploaded rows: {e}")
+
+
+def load_uploaded_rows_from_neon():
+    if _engine is None:
+        return pd.DataFrame(columns=TARGET_COLS)
+    try:
+        with _engine.connect() as c:
+            rows = c.execute(text("""
+                SELECT shop, game, deposits, paid_out_sum, ggr, gw_margin,
+                       net_win, net_win_margin, year, month, monthnum
+                FROM dashboard_uploaded_rows
+            """)).fetchall()
+        if not rows:
+            return pd.DataFrame(columns=TARGET_COLS)
+        return pd.DataFrame([{
+            'Shop': r[0], 'Game': r[1], 'Deposits': float(r[2] or 0), 'Paid Out Sum': float(r[3] or 0),
+            'GGR': float(r[4] or 0), 'GW Margin %': float(r[5] or 0), 'Net Win': float(r[6] or 0),
+            'Net Win Margin': float(r[7] or 0), 'Year': r[8], 'Month': r[9], 'MonthNum': int(r[10] or 0)
+        } for r in rows])
+    except Exception:
+        return pd.DataFrame(columns=TARGET_COLS)
+
+
 # --- PRECISION HELPER FUNCTIONS ---
 def clean_currency_string(val):
-    """
-    Clean currency strings with high precision handling:
-    - Removes currency symbols (R, $, €, £, ZAR)
-    - Removes whitespace and special characters
-    - Handles comma as thousand separator
-    - Handles comma as decimal separator (European format)
-    - Handles parentheses for negative values
-    - Converts to float with maximum precision
-    """
     if pd.isna(val) or val == '' or val == 'nan' or val == 'NaN':
         return 0.0
     if isinstance(val, (int, float)):
         return float(val)
-    
-    # Convert to string and strip
     s = str(val).strip()
-    
-    # Remove currency symbols (R, $, €, £, ZAR, etc.)
     s = re.sub(r'[R$€£]', '', s)
     s = re.sub(r'ZAR', '', s, flags=re.IGNORECASE)
-    
-    # Remove whitespace and special characters (keep only numbers, commas, dots, and minus signs)
     s = re.sub(r'[\s\xa0\n\r\t]', '', s)
-    
-    # Handle parentheses for negative values (e.g., (1,234.56) → -1234.56)
     if s.startswith('(') and s.endswith(')'):
         s = '-' + s[1:-1]
-    
-    # Handle comma as thousand separator vs decimal separator
     if ',' in s:
-        # Count commas and dots
         comma_count = s.count(',')
         dot_count = s.count('.')
-        
-        # If there's a comma and a dot, the comma is likely thousand separator
         if comma_count > 0 and dot_count > 0:
-            # European format: comma is decimal, dot is thousand (e.g., 1.234,56)
             if dot_count == 1 and comma_count == 1:
-                # If there's exactly one dot and one comma, check positions
                 dot_pos = s.index('.')
                 comma_pos = s.index(',')
                 if comma_pos > dot_pos:
-                    # European format: 1.234,56 → remove dot, replace comma with dot
                     s = s.replace('.', '')
                     s = s.replace(',', '.')
                 else:
-                    # US format: 1,234.56 → remove comma
                     s = s.replace(',', '')
-            # US format: 1,234.56 → remove commas
             elif dot_count >= 1 and comma_count >= 1:
-                # US format: remove commas
                 s = s.replace(',', '')
-            # European format: 1.234.567,89
             elif comma_count == 1 and dot_count > 1:
                 s = s.replace('.', '')
                 s = s.replace(',', '.')
-            # Standard format: 1,234.56
             else:
                 s = s.replace(',', '')
-        # If there's only a comma and no dot
         elif comma_count > 0 and dot_count == 0:
-            # European format: 1234,56 → replace comma with dot
             if len(s.split(',')[1]) <= 2:
                 s = s.replace(',', '.')
             else:
-                # Thousands format: 1,234 → remove comma
                 s = s.replace(',', '')
-    
-    # Remove any remaining non-numeric characters (except dot and minus)
-    # But keep the dot for decimal
     s = re.sub(r'[^\d.\-]', '', s)
-    
-    # Handle multiple dots - keep only the last one
     if s.count('.') > 1:
         parts = s.split('.')
         s = ''.join(parts[:-1]) + '.' + parts[-1]
-    
     try:
-        result = float(s)
-        return result
+        return float(s)
     except ValueError:
-        # If conversion fails, try to extract number using regex
         match = re.search(r'[\d,\.]+', s)
         if match:
             try:
-                # Clean the matched number
-                num_str = match.group()
-                num_str = num_str.replace(',', '')
+                num_str = match.group().replace(',', '')
                 return float(num_str)
-            except:
+            except Exception:
                 return 0.0
         return 0.0
 
+
 def extract_date_from_filename(filename):
-    """Extracts month and year from filenames like 'January 2026.csv' or 'Cash Operations Summary - January 2026.csv'"""
-    # Try to find month name and year anywhere in the filename
     month_pattern = r'(January|February|March|April|May|June|July|August|September|October|November|December)\s*(\d{4})'
     match = re.search(month_pattern, filename, re.IGNORECASE)
     if match:
         month_name = match.group(1).capitalize()
         year = int(match.group(2))
         return datetime(year, month_order.index(month_name) + 1, 1)
-    
-    # Try alternative: month name with underscore or dash
     month_pattern2 = r'(January|February|March|April|May|June|July|August|September|October|November|December)[_\-\s]*(\d{4})'
     match = re.search(month_pattern2, filename, re.IGNORECASE)
     if match:
         month_name = match.group(1).capitalize()
         year = int(match.group(2))
         return datetime(year, month_order.index(month_name) + 1, 1)
-    
-    # Try abbreviated month names (Jan, Feb, Mar, etc.)
     month_abbr_pattern = r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{4})'
     match = re.search(month_abbr_pattern, filename, re.IGNORECASE)
     if match:
@@ -157,13 +246,14 @@ def extract_date_from_filename(filename):
         }
         month_name = month_map.get(month_abbr, 'January')
         return datetime(year, month_order.index(month_name) + 1, 1)
-    
-    # If no date found, return None
     return None
 
+
 def parse_jan2025_date(date_val):
-    if pd.isna(date_val): return None
-    if isinstance(date_val, (pd.Timestamp, datetime)): return date_val
+    if pd.isna(date_val):
+        return None
+    if isinstance(date_val, (pd.Timestamp, datetime)):
+        return date_val
     date_str = str(date_val).strip()
     try:
         parts = date_str.split()
@@ -172,187 +262,103 @@ def parse_jan2025_date(date_val):
             time_parts = parts[1].split(':')
             if len(date_parts) == 3 and len(time_parts) >= 2:
                 day, month, year = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
-                if year < 100: year += 2000
+                if year < 100:
+                    year += 2000
                 hour, minute = int(time_parts[0]), int(time_parts[1])
                 second = int(time_parts[2]) if len(time_parts) > 2 else 0
                 return pd.Timestamp(year=year, month=month, day=day, hour=hour, minute=minute, second=second)
-    except: pass
-    try: return pd.to_datetime(date_str, format='%d/%m/%y %H:%M:%S', errors='coerce')
-    except:
-        try: return pd.to_datetime(date_str, dayfirst=True, errors='coerce')
-        except: return None
+    except Exception:
+        pass
+    try:
+        return pd.to_datetime(date_str, format='%d/%m/%y %H:%M:%S', errors='coerce')
+    except Exception:
+        try:
+            return pd.to_datetime(date_str, dayfirst=True, errors='coerce')
+        except Exception:
+            return None
+
 
 def find_deposit_column(df):
-    """Find the correct deposit column in the dataframe"""
-    deposit_keywords = [
-        'paid in sum', 'paidin', 'paid in', 'deposits', 'deposit', 
-        'cash in', 'cashin', 'payment', 'paid_sum',
-        'paid sum', 'paid-in', 'paid_in'
-    ]
-    
-    # First pass: exact match
+    deposit_keywords = ['paid in sum', 'paidin', 'paid in', 'deposits', 'deposit',
+                        'cash in', 'cashin', 'payment', 'paid_sum', 'paid sum', 'paid-in', 'paid_in']
     for col in df.columns:
-        col_lower = str(col).lower().strip()
-        if col_lower in deposit_keywords:
+        if str(col).lower().strip() in deposit_keywords:
             return col
-    
-    # Second pass: partial match
     for col in df.columns:
         col_lower = str(col).lower().strip()
         for keyword in deposit_keywords:
             if keyword in col_lower:
                 return col
-    
-    # Third pass: look for any column with 'paid' or 'deposit'
     for col in df.columns:
         col_lower = str(col).lower().strip()
         if 'paid' in col_lower or 'deposit' in col_lower:
             return col
-    
     return None
 
+
 def find_ggr_column(df):
-    """Find the correct GGR column in the dataframe"""
-    ggr_keywords = [
-        'gross win', 'grosswin', 'ggr', 'gross revenue', 
-        'grossrevenue', 'gross', 'win', 'revenue', 'grosswin'
-    ]
-    
-    # First pass: exact match
+    ggr_keywords = ['gross win', 'grosswin', 'ggr', 'gross revenue', 'grossrevenue', 'gross', 'win', 'revenue']
     for col in df.columns:
-        col_lower = str(col).lower().strip()
-        if col_lower in ggr_keywords:
+        if str(col).lower().strip() in ggr_keywords:
             return col
-    
-    # Second pass: partial match
     for col in df.columns:
         col_lower = str(col).lower().strip()
         for keyword in ggr_keywords:
             if keyword in col_lower:
                 return col
-    
-    # Third pass: look for 'gross' or 'win'
     for col in df.columns:
         col_lower = str(col).lower().strip()
         if 'gross' in col_lower or 'win' in col_lower:
             return col
-    
     return None
 
-def clean_game_name(val):
-    """Clean game names to ensure they are string and not NaN.
 
-    ACCURACY FIX: source files spell some game names inconsistently across
-    months (e.g. 'BETGAMES Lucky 6' in some sheets vs 'BetGames Lucky 6' in
-    others). Without normalization these become two separate entries in the
-    Game dropdown, silently fragmenting a single game's history - a branch,
-    year, or month can look "missing" simply because its rows were filed
-    under the other casing. We collapse names that are identical once
-    whitespace is collapsed and case is ignored, and always display the
-    cleaned name in a consistent canonical casing so previously-split data
-    re-merges into one entry."""
+def clean_game_name(val):
     if pd.isna(val):
         return "Unknown Game"
     if isinstance(val, (int, float)):
         return str(int(val)) if val == int(val) else str(val)
-
     s = str(val).strip()
-    # Collapse any internal multi-space runs (e.g. "Lucky  6" -> "Lucky 6")
     s = re.sub(r'\s+', ' ', s)
-
-    # Known brand-name casing fixes: normalize regardless of how the source
-    # file capitalized it, so "BETGAMES", "Betgames", "BetGames" all merge.
     s = re.sub(r'(?i)\bbetgames\b', 'BetGames', s)
     s = re.sub(r'(?i)\bskypilot\b', 'SkyPilot', s)
-
     return s
 
+
 def enforce_schema(df):
-    """Ensures exact matching to TARGET_COLS and repairs merged Excel cells."""
-    if df is None or df.empty: return None
+    if df is None or df.empty:
+        return None
     df = df.loc[:, ~df.columns.duplicated()]
-    
-    # ACCURACY FIX: Forward-fill empty shop names caused by Excel merged/grouped cells
     if 'Shop' in df.columns:
         df['Shop'] = df['Shop'].astype(str).str.strip().replace({'nan': None, 'NaN': None, 'None': None, '': None})
-        df['Shop'] = df['Shop'].ffill() # Copies the last known shop down to blank rows
+        df['Shop'] = df['Shop'].ffill()
         df['Shop'] = df['Shop'].replace({'Potch': 'Potchefstroom'})
     else:
         df['Shop'] = 'Unknown'
-
-    # Clean Game column
     if 'Game' in df.columns:
         df['Game'] = df['Game'].apply(clean_game_name)
     else:
         df['Game'] = 'Unknown Game'
-
-    # Fill missing columns
     for col in TARGET_COLS:
         if col not in df.columns:
             df[col] = 0.0 if col not in ['Shop', 'Game', 'Year', 'Month'] else "Unknown"
-            
-    # Clean numeric columns for math - using enhanced precision function
     num_cols = ['Deposits', 'Paid Out Sum', 'GGR', 'GW Margin %', 'Net Win', 'Net Win Margin']
     for col in num_cols:
         if col in df.columns:
             df[col] = df[col].apply(clean_currency_string)
         else:
             df[col] = 0.0
-
     return df[TARGET_COLS].copy()
 
-# =====================================================================
-# FIXED EXCEL PARSING LOGIC
-#
-# Root cause of the doubling / corruption bug (kept here as documentation):
-#
-# 1) Each "...Excl users" summary sheet in these workbooks actually
-#    contains TWO stacked blocks on the same sheet - one for the prior
-#    year (e.g. 2024) and one for the current year (e.g. 2025), each
-#    with its own "Shop | Game | ... | Paid In | ... | Gross Win" header
-#    row. The old code searched for the FIRST header row only and then
-#    read everything below it (including the second year's own header
-#    and totals row) as a single table using the FIRST header's column
-#    positions. That silently misaligned and corrupted the second
-#    year's figures and let stray "All Branches Total" rows leak into
-#    the data as if they were per-shop rows.
-#
-# 2) One sheet per month is meant to hold the per-Shop/per-Game summary
-#    ("Excl users") while a sibling sheet holds the same revenue broken
-#    down per individual user ("Games and Users"). The old code decided
-#    which sheets to skip purely from the sheet NAME (skip if it
-#    contains "user" but not "excl"). For April, the workbook contains
-#    a sheet literally named 'April 24&25-Excl users ' that is actually
-#    structured as a per-USER breakdown (same layout as the "Games and
-#    Users" sheets), purely due to a typo in the sheet name. The old
-#    name-based filter kept it, so April's revenue was loaded twice -
-#    once from the real summary sheet and once from this mislabeled
-#    per-user sheet - producing the doubled GGR/Deposits for April.
-#
-# THE FIX:
-#   - Classify each sheet by its ACTUAL column structure (does row 0
-#     contain Game/Shop/User columns?), not by its name. Per-user
-#     sheets are always skipped for the branch/game summary, regardless
-#     of what they happen to be named.
-#   - For genuine summary sheets, find EVERY "Shop"+"Game" header row
-#     (one per year block) and parse each block independently using
-#     its OWN header positions, instead of treating the whole sheet as
-#     one table.
-# =====================================================================
 
 def is_per_user_sheet(df_raw):
-    """A per-user breakdown sheet has its header on row 0 with Game/Shop/User columns.
-    This is checked by ACTUAL structure, not by sheet name, since sheet names can be
-    mislabeled (e.g. a per-user sheet named '...Excl users')."""
     if df_raw.empty:
         return False
     first_row = [str(x).strip().lower() for x in df_raw.iloc[0].values]
     return 'game' in first_row and 'shop' in first_row and 'user' in first_row
 
+
 def find_summary_header_rows(df_raw):
-    """Find every row index where both 'Shop' and 'Game' appear as column headers.
-    Summary sheets in these workbooks stack one block per year, each with its own
-    header row, so there can be more than one."""
     header_rows = []
     for i, row in df_raw.iterrows():
         row_clean = [str(x).strip().lower() for x in row.values]
@@ -360,217 +366,147 @@ def find_summary_header_rows(df_raw):
             header_rows.append(i)
     return header_rows
 
+
 def parse_summary_block(df_raw, header_idx, block_end_idx, source_name):
-    """Parse a single Shop/Game block (one year section) using ITS OWN header row,
-    so a second stacked year-block never inherits column positions from the first."""
     header_row = [str(c).strip() for c in df_raw.iloc[header_idx].values]
     block = df_raw.iloc[header_idx + 1: block_end_idx].copy()
     block.columns = header_row
     block = block.loc[:, ~block.columns.duplicated()]
-
     shop_col = next((c for c in block.columns if str(c).lower().strip() == 'shop'), None)
     if not shop_col:
         return None
     block['Shop'] = block[shop_col]
-
     gross_col = find_ggr_column(block)
     block['GGR'] = block[gross_col] if gross_col else 0.0
-
     deposit_col = find_deposit_column(block)
     block['Deposits'] = block[deposit_col] if deposit_col else 0.0
-
     date_col = next((c for c in block.columns if 'firstslip' in str(c).lower().replace(' ', '') or 'date' in str(c).lower()), None)
     if date_col:
         if 'jan' in source_name.lower():
             block['First Slip Issued'] = block[date_col].apply(parse_jan2025_date)
         else:
             block['First Slip Issued'] = pd.to_datetime(block[date_col], errors='coerce', dayfirst=True)
-
-        # Forward-fill dates to capture unlabelled rows beneath a grouped date,
-        # but ONLY within this block - never across a year boundary.
         block['First Slip Issued'] = block['First Slip Issued'].ffill()
         block = block.dropna(subset=['First Slip Issued'])
-
         block['Year'] = block['First Slip Issued'].dt.year.astype(int).astype(str)
         block['Month'] = block['First Slip Issued'].dt.strftime('%B')
         block['MonthNum'] = block['First Slip Issued'].dt.month
     else:
         return None
-
-    # Drop any stray summary/header rows that sit between the data rows and the next
-    # year's header (e.g. "All Branches Total ...", or a second "Bet Slips / First
-    # Slip Issued / ..." mini-header+totals row). These are sheet-level rows, not
-    # per-shop rows, and forward-fill can otherwise drag a real branch name down
-    # onto them, corrupting Deposits/GGR with totals-row values.
     block = block[block['Shop'].astype(str).str.strip().isin(BRANCHES)]
-
     return block
 
+
 def process_excel_dataframe(df_raw, source_name):
-    """High-accuracy Excel header hunting and data extraction.
-    Handles sheets that stack multiple year-blocks (each with its own header row)
-    by parsing every block separately instead of treating the sheet as one table."""
     header_rows = find_summary_header_rows(df_raw)
     if not header_rows:
         return None
-
     parsed_blocks = []
     for i, header_idx in enumerate(header_rows):
         block_end_idx = header_rows[i + 1] if i + 1 < len(header_rows) else len(df_raw)
         block = parse_summary_block(df_raw, header_idx, block_end_idx, source_name)
         if block is not None and not block.empty:
             parsed_blocks.append(block)
-
     if not parsed_blocks:
         return None
-
     return pd.concat(parsed_blocks, ignore_index=True)
+
 
 # --- LOAD DATA FUNCTIONS ---
 @st.cache_data
 def load_data(uploaded_files):
-    """Original load_data function - handles both CSV and Excel files"""
     all_data = []
-
     for file in uploaded_files:
         try:
             filename = file.name.lower()
             file_date = extract_date_from_filename(filename)
-            
-            # --- PATH 1: CSV FILES (Raw or Clean) ---
             if filename.endswith('.csv'):
                 df = pd.read_csv(file)
                 df.columns = [str(c).strip() for c in df.columns]
-                
-                # Find deposit column
                 deposit_col = find_deposit_column(df)
                 if deposit_col:
                     df = df.rename(columns={deposit_col: 'Deposits'})
-                
-                # Find GGR column
                 ggr_col = find_ggr_column(df)
                 if ggr_col:
                     df = df.rename(columns={ggr_col: 'GGR'})
-                
-                # If no deposit or GGR found, try alternative column names
                 if 'Deposits' not in df.columns:
                     if 'Paid In Sum' in df.columns:
                         df = df.rename(columns={'Paid In Sum': 'Deposits'})
-                    elif 'Cashier' in df.columns:
-                        df['Deposits'] = 0.0
                     else:
                         df['Deposits'] = 0.0
-                
                 if 'GGR' not in df.columns:
                     if 'Gross Win' in df.columns:
                         df = df.rename(columns={'Gross Win': 'GGR'})
                     else:
                         df['GGR'] = 0.0
-                
-                # Assign date
                 df['Date'] = file_date
-                
-                # Derive Dates from the filename date
                 if not df.empty and file_date:
                     df['Year'] = str(file_date.year)
                     df['Month'] = file_date.strftime('%B')
                     df['MonthNum'] = file_date.month
-                    
                 df_clean = enforce_schema(df)
-                if df_clean is not None: 
+                if df_clean is not None:
                     all_data.append(df_clean)
-
-            # --- PATH 2: LEGACY EXCEL FILES ---
             elif filename.endswith(('.xls', '.xlsx')):
                 xl = pd.ExcelFile(file)
                 for sheet in xl.sheet_names:
                     df_raw = pd.read_excel(file, sheet_name=sheet, header=None)
-
-                    # Classify by ACTUAL structure, not by sheet name - a sheet can be
-                    # mislabeled (e.g. a per-user breakdown sheet named "...Excl users").
                     if is_per_user_sheet(df_raw):
                         continue
-
                     processed_df = process_excel_dataframe(df_raw, f"{file.name} - {sheet}")
-
                     df_clean = enforce_schema(processed_df)
-                    if df_clean is not None: all_data.append(df_clean)
-                        
+                    if df_clean is not None:
+                        all_data.append(df_clean)
         except Exception as e:
             st.error(f"Error loading {file.name}: {e}")
-            
     if all_data:
-        final_df = pd.concat(all_data, ignore_index=True)
-        return final_df
+        return pd.concat(all_data, ignore_index=True)
     return pd.DataFrame()
+
 
 @st.cache_data
 def load_historical_from_folder():
-    """Load all Excel files from the historical_data folder"""
     all_data = []
     file_count = 0
-    
-    # Get all Excel files from historical_data folder
     excel_files = glob.glob(os.path.join(HISTORICAL_FOLDER, "*.xlsx")) + \
                   glob.glob(os.path.join(HISTORICAL_FOLDER, "*.xls"))
-    
     if not excel_files:
         return pd.DataFrame(), 0
-    
     for file_path in excel_files:
         try:
             filename = os.path.basename(file_path)
-            
-            # Read Excel file
             xl = pd.ExcelFile(file_path)
             for sheet in xl.sheet_names:
                 df_raw = pd.read_excel(file_path, sheet_name=sheet, header=None)
-
-                # Classify by ACTUAL structure, not by sheet name - a sheet can be
-                # mislabeled (e.g. a per-user breakdown sheet named "...Excl users").
                 if is_per_user_sheet(df_raw):
                     continue
-
                 processed_df = process_excel_dataframe(df_raw, f"{filename} - {sheet}")
-
                 df_clean = enforce_schema(processed_df)
                 if df_clean is not None:
                     all_data.append(df_clean)
                     file_count += 1
-                    
         except Exception as e:
             st.warning(f"⚠️ Could not load {file_path}: {str(e)}")
-    
     if all_data:
-        final_df = pd.concat(all_data, ignore_index=True)
-        return final_df, file_count
+        return pd.concat(all_data, ignore_index=True), file_count
     return pd.DataFrame(), 0
+
 
 @st.cache_data
 def load_uploaded_csvs_from_folder():
-    """Load all CSV files from the uploads folder"""
     all_data = []
     file_count = 0
-    
-    # Get all CSV files from uploads folder
     csv_files = glob.glob(os.path.join(UPLOAD_FOLDER, "*.csv"))
-    
     if not csv_files:
         return pd.DataFrame(), 0
-    
     for file_path in csv_files:
         try:
             filename = os.path.basename(file_path)
             file_date = extract_date_from_filename(filename)
-            
             if file_date is None:
                 continue
-            
-            # Read CSV file
             df = pd.read_csv(file_path)
             df.columns = [str(c).strip() for c in df.columns]
-            
-            # Find and rename columns with precision
             deposit_col = find_deposit_column(df)
             if deposit_col:
                 df = df.rename(columns={deposit_col: 'Deposits'})
@@ -578,7 +514,6 @@ def load_uploaded_csvs_from_folder():
                 df = df.rename(columns={'Paid In Sum': 'Deposits'})
             elif 'Deposits' not in df.columns:
                 df['Deposits'] = 0.0
-            
             ggr_col = find_ggr_column(df)
             if ggr_col:
                 df = df.rename(columns={ggr_col: 'GGR'})
@@ -586,55 +521,43 @@ def load_uploaded_csvs_from_folder():
                 df = df.rename(columns={'Gross Win': 'GGR'})
             elif 'GGR' not in df.columns:
                 df['GGR'] = 0.0
-            
-            # Find Shop column
             shop_col = None
             for col in df.columns:
                 if str(col).lower().strip() in ['shop', 'branch', 'store', 'location']:
                     shop_col = col
                     break
-            
             if shop_col:
                 df = df.rename(columns={shop_col: 'Shop'})
             elif 'Shop' not in df.columns:
                 df['Shop'] = 'Malvern'
-            
-            # Assign date from filename
             df['Date'] = file_date
-            
             if not df.empty:
                 df['Year'] = str(file_date.year)
                 df['Month'] = file_date.strftime('%B')
                 df['MonthNum'] = file_date.month
-                
             df_clean = enforce_schema(df)
             if df_clean is not None:
                 all_data.append(df_clean)
                 file_count += 1
-                    
         except Exception as e:
             st.warning(f"⚠️ Could not load {file_path}: {str(e)}")
-    
     if all_data:
-        final_df = pd.concat(all_data, ignore_index=True)
-        return final_df, file_count
+        return pd.concat(all_data, ignore_index=True), file_count
     return pd.DataFrame(), 0
 
+
 def ensure_numeric(df, columns):
-    """Ensure specified columns are numeric, converting if necessary"""
     for col in columns:
         if col in df.columns:
-            # Try to convert to numeric, coercing errors to NaN
             df[col] = pd.to_numeric(df[col], errors='coerce')
-            # Fill NaN with 0
             df[col] = df[col].fillna(0)
     return df
+
 
 # --- ADAPTIVE ANALYTICS ENGINE ---
 def generate_strategic_analysis(branch_name, yoy, total_ggr, total_deposits, top_game):
     display_name = "the overall network" if branch_name == "All Branches Dashboard" else f"the {branch_name} branch"
     insights = [f"### 📊 Tailored Action Plan: {branch_name}"]
-
     if yoy > 20:
         insights.append(f"**🚀 Hyper-Growth Mode ({yoy:+.1f}%):** {display_name} is experiencing exceptional momentum. \n* **Action:** Shift strategy from acquisition to maximizing Lifetime Value (LTV). Consider launching VIP reward tiers to lock in the high-rollers driving this surge.")
     elif 0 <= yoy <= 20:
@@ -643,40 +566,48 @@ def generate_strategic_analysis(branch_name, yoy, total_ggr, total_deposits, top
         insights.append(f"**⚠️ Early Warning ({yoy:+.1f}%):** Revenue has cooled slightly. \n* **Action:** Deploy immediate reactivation campaigns targeting lapsed players in this specific area.")
     else:
         insights.append(f"**🚨 Critical Decline ({yoy:+.1f}%):** {display_name} requires immediate intervention. \n* **Action:** Conduct a strict operational audit. Assess local competitor promotions, review branch overheads, and consider aggressive grassroots marketing to rebuild foot traffic.")
-
     insights.append(f"**🎯 Product Optimization:** With **'{top_game}'** dominating the revenue share, ensure terminal availability and uptime for this game is at 100% during peak hours.")
     insights.append(f"**💰 Deposits Performance:** Total deposits of R {total_deposits:,.2f} indicate {'strong' if total_deposits > 1000000 else 'moderate'} player activity.")
     return "\n\n".join(insights)
+
 
 # --- APP LAYOUT ---
 st.title("Playbet Dashboard")
 
 if 'manual_2026_data' not in st.session_state:
-    st.session_state.manual_2026_data = pd.DataFrame(columns=TARGET_COLS)
+    # Load persisted manual entries from Neon so they survive restarts
+    st.session_state.manual_2026_data = load_manual_entries_from_neon()
 
 st.sidebar.header("📤 Upload New CSV")
 uploaded_files = st.sidebar.file_uploader(
-    "Upload CSV files", 
-    accept_multiple_files=True, 
+    "Upload CSV files",
+    accept_multiple_files=True,
     type=["csv"],
-    help="Upload CSV files to add to the dashboard. Files will be saved permanently."
+    help="Upload CSV files to add to the dashboard. Saved to the database permanently."
 )
 st.sidebar.info("💡 Ensure CSV filenames include the month and year (e.g., 'May 2026.csv').")
 
-# Save uploaded files to uploads folder
+# Save uploaded files: parse and persist rows to Neon (survives restarts)
 if uploaded_files:
     saved_files = []
     for file in uploaded_files:
-        save_path = Path(UPLOAD_FOLDER) / file.name
-        if save_path.exists():
-            st.sidebar.warning(f"⚠️ {file.name} already exists. Skipping duplicate.")
-        else:
-            with open(save_path, 'wb') as f:
-                f.write(file.getbuffer())
-            saved_files.append(file.name)
-    
+        try:
+            parsed = load_data([file])
+            if parsed is not None and not parsed.empty:
+                save_uploaded_rows_to_neon(parsed, file.name)
+                saved_files.append(file.name)
+        except Exception as e:
+            st.sidebar.warning(f"Could not process {file.name}: {e}")
+        try:
+            save_path = Path(UPLOAD_FOLDER) / file.name
+            if not save_path.exists():
+                with open(save_path, 'wb') as f:
+                    f.write(file.getbuffer())
+        except Exception:
+            pass
     if saved_files:
-        st.sidebar.success(f"✅ Saved {len(saved_files)} file(s)")
+        st.sidebar.success(f"✅ Saved {len(saved_files)} file(s) to database")
+        st.cache_data.clear()
         st.rerun()
 
 st.sidebar.divider()
@@ -692,16 +623,21 @@ entry_ggr = st.sidebar.number_input("Enter GGR Amount (R):", min_value=0.0, form
 if st.sidebar.button("Append to Ledger"):
     month_num = month_order.index(entry_month) + 1
     new_row = pd.DataFrame([{
-        'Shop': entry_shop, 'Game': entry_game, 
+        'Shop': entry_shop, 'Game': entry_game,
         'Deposits': entry_deposits, 'Paid Out Sum': 0.0,
         'GGR': entry_ggr, 'GW Margin %': 0.0, 'Net Win': 0.0, 'Net Win Margin': 0.0,
         'Year': '2026', 'Month': entry_month, 'MonthNum': month_num
     }])
     st.session_state.manual_2026_data = pd.concat([st.session_state.manual_2026_data, new_row], ignore_index=True)
-    st.sidebar.success(f"Added R {entry_ggr:,.2f} GGR and R {entry_deposits:,.2f} Deposits for {entry_month}!")
+    saved = save_manual_entry_to_neon(entry_shop, entry_game, entry_deposits, entry_ggr, '2026', entry_month, month_num)
+    if saved:
+        st.sidebar.success(f"Saved R {entry_ggr:,.2f} GGR and R {entry_deposits:,.2f} Deposits for {entry_month} to database!")
+    else:
+        st.sidebar.success(f"Added R {entry_ggr:,.2f} GGR and R {entry_deposits:,.2f} Deposits for {entry_month} (session only)!")
 
 if st.sidebar.button("Reset Ledger"):
     st.session_state.manual_2026_data = pd.DataFrame(columns=TARGET_COLS)
+    clear_manual_entries_neon()
     st.rerun()
 
 # --- SIDEBAR: FILTERS ---
@@ -709,59 +645,54 @@ st.sidebar.divider()
 st.sidebar.header("⏳ Filters")
 
 # --- MAIN RUN LOGIC ---
-# Load historical data from folder
 historical_df, historical_file_count = load_historical_from_folder()
-
-# Load uploaded CSV files from uploads folder
 uploaded_df, uploaded_file_count = load_uploaded_csvs_from_folder()
 
-# Combine all data sources
-df_parts = []
+# Load persisted uploaded rows from Neon (survives restarts)
+neon_uploaded_df = load_uploaded_rows_from_neon()
+if not neon_uploaded_df.empty:
+    if uploaded_df.empty:
+        uploaded_df = neon_uploaded_df
+    else:
+        uploaded_df = pd.concat([uploaded_df, neon_uploaded_df], ignore_index=True).drop_duplicates()
 
+df_parts = []
 if not historical_df.empty:
     df_parts.append(historical_df)
-
 if not uploaded_df.empty:
     df_parts.append(uploaded_df)
-
 if not st.session_state.manual_2026_data.empty:
     df_parts.append(st.session_state.manual_2026_data)
 
 if df_parts:
     df = pd.concat(df_parts, ignore_index=True)
-    
-    # Ensure numeric columns are properly typed
     numeric_cols = ['GGR', 'Deposits', 'Paid Out Sum', 'GW Margin %', 'Net Win', 'Net Win Margin']
     df = ensure_numeric(df, numeric_cols)
-    
-    # Ensure Game column is clean and has no NaN
     if 'Game' in df.columns:
         df['Game'] = df['Game'].fillna('Unknown Game').astype(str)
-    
+
     if not df.empty:
         available_months = sorted(df['Month'].unique(), key=lambda m: month_order.index(m) if m in month_order else 0)
         available_years = sorted(df['Year'].unique())
-        
+
         selected_year = st.sidebar.selectbox("Select Year:", ["All Time"] + available_years)
         selected_month = st.sidebar.selectbox("Select Month:", ["All Months"] + available_months) if selected_year != "All Time" else "All Months"
-
         nav_options = ["All Branches Dashboard"] + BRANCHES
         selected_view = st.sidebar.radio("Select Branch Analysis:", nav_options)
-        
+
         df_filtered = df if selected_view == "All Branches Dashboard" else df[df['Shop'] == selected_view]
-        if selected_year != "All Time": df_filtered = df_filtered[df_filtered['Year'] == selected_year]
-        if selected_month != "All Months": df_filtered = df_filtered[df_filtered['Month'] == selected_month]
-        
-        # Ensure filtered data is numeric and Game is clean
+        if selected_year != "All Time":
+            df_filtered = df_filtered[df_filtered['Year'] == selected_year]
+        if selected_month != "All Months":
+            df_filtered = df_filtered[df_filtered['Month'] == selected_month]
+
         df_filtered = ensure_numeric(df_filtered, ['GGR', 'Deposits'])
         if 'Game' in df_filtered.columns:
             df_filtered['Game'] = df_filtered['Game'].fillna('Unknown Game').astype(str)
-        
-        # Calculate totals with precision
+
         if not df_filtered.empty and len(df_filtered) > 0:
             total_ggr = df_filtered['GGR'].sum()
             total_deposits = df_filtered['Deposits'].sum()
-            # Get top game - safely
             try:
                 game_ggr = df_filtered.groupby('Game')['GGR'].sum()
                 top_game = game_ggr.idxmax() if not game_ggr.empty else "N/A"
@@ -771,7 +702,7 @@ if df_parts:
             total_ggr = 0.0
             total_deposits = 0.0
             top_game = "N/A"
-        
+
         yoy = 0.0
         if selected_year == "All Time" and not df_filtered.empty:
             years = sorted(df_filtered['Year'].unique())
@@ -779,14 +710,10 @@ if df_parts:
                 curr = df_filtered[df_filtered['Year'] == years[-1]]['GGR'].sum()
                 prev = df_filtered[df_filtered['Year'] == years[-2]]['GGR'].sum()
                 yoy = ((curr - prev) / prev) * 100 if prev != 0 else 0
-            
+
         st.subheader(f"{selected_view} Performance")
         c1, c2, c3, c4 = st.columns(4)
 
-        # NOTE: st.metric() auto-abbreviates large numeric values (e.g. it can render
-        # 999065.52 as "0.999066M" instead of "R 999,065.52"). Using styled markdown
-        # cards instead of st.metric() guarantees the full, correctly formatted Rand
-        # value is always shown exactly as computed, regardless of Streamlit version.
         def render_metric_card(col, label, value_str):
             col.markdown(
                 f"""
@@ -809,126 +736,69 @@ if df_parts:
         if not chart_data.empty:
             fig = px.bar(chart_data, x='Month', y='GGR', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=YEAR_COLORS)
             fig.update_layout(xaxis_title=None, yaxis_title="Gross Gaming Revenue (ZAR)")
-            # Force full, comma-formatted Rand values in the hover tooltip and y-axis
-            # ticks instead of Plotly's default SI-prefix abbreviation (e.g. "0.999066M"
-            # instead of "R 999,065.52").
             fig.update_traces(hovertemplate="<b>%{x} %{fullData.name}</b><br>GGR: R %{y:,.2f}<extra></extra>")
             fig.update_layout(yaxis_tickformat=",.0f")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("No data available for GGR chart")
-        
+
         st.subheader("Deposits (Paid In): Multi-Year Stacked Comparison")
         chart_data_deposits = df_filtered.groupby(['MonthNum', 'Month', 'Year'])['Deposits'].sum().reset_index().sort_values('MonthNum')
         if not chart_data_deposits.empty:
             fig_deposits = px.bar(chart_data_deposits, x='Month', y='Deposits', color='Year', barmode='stack', category_orders={"Month": month_order}, color_discrete_map=DEPOSIT_YEAR_COLORS)
             fig_deposits.update_layout(xaxis_title=None, yaxis_title="Deposits / Paid In (ZAR)")
-            # Same fix as the GGR chart above - full Rand values in tooltip/axis, no abbreviation.
             fig_deposits.update_traces(hovertemplate="<b>%{x} %{fullData.name}</b><br>Deposits: R %{y:,.2f}<extra></extra>")
             fig_deposits.update_layout(yaxis_tickformat=",.0f")
             st.plotly_chart(fig_deposits, use_container_width=True)
         else:
             st.warning("No data available for Deposits chart")
-            
-   # --- GAME REVENUE ANALYSIS (per-game, branch x year breakdown + month x year with variance) ---
+
+        # --- GAME REVENUE ANALYSIS ---
         st.subheader("Game Revenue Analysis")
-
-        # Game selector for this section only. Scoped to whatever the sidebar's
-        # branch/year/month filters have already narrowed df_filtered down to,
-        # so picking a game here drills into that same filtered slice.
         available_games = sorted(df_filtered['Game'].dropna().unique().tolist()) if not df_filtered.empty else []
-
         if not available_games:
             st.info("💡 No game data available for the current filter selection.")
         else:
             selected_game = st.selectbox("Select Game:", available_games, key="game_revenue_game_select")
-
             game_df = df_filtered[df_filtered['Game'] == selected_game]
-
             if game_df.empty:
                 st.warning(f"No data found for '{selected_game}' in the current filter.")
             else:
-                # --- Branch x Year summary table ---
                 st.markdown(f"**{selected_game} — GGR by Branch and Year**")
-
-                branch_year = game_df.pivot_table(
-                    index='Shop', columns='Year', values='GGR', aggfunc='sum', fill_value=0
-                ).astype(float)
-                # Order branches consistently and order year columns chronologically
+                branch_year = game_df.pivot_table(index='Shop', columns='Year', values='GGR', aggfunc='sum', fill_value=0).astype(float)
                 branch_year = branch_year.reindex([b for b in BRANCHES if b in branch_year.index])
                 year_cols_sorted = sorted(branch_year.columns, key=lambda y: int(y))
                 branch_year = branch_year[year_cols_sorted]
-
-                # Overall total row across branches, plus an overall total column across years
                 branch_year.loc['All Branches'] = branch_year.sum(numeric_only=True)
                 branch_year['Overall Total'] = branch_year.sum(axis=1)
-
-                st.dataframe(
-                    branch_year.style.format({col: "R {:,.2f}" for col in branch_year.columns}),
-                    use_container_width=True
-                )
-
+                st.dataframe(branch_year.style.format({col: "R {:,.2f}" for col in branch_year.columns}), use_container_width=True)
                 st.divider()
 
-                # --- Month-to-month table by year. Always shows all 12 months, with
-                #     0.00 placeholders for any month/year combo with no data (rather
-                #     than silently dropping the row). Each year's GGR cell is colored
-                #     green if higher than the same month in the prior year, red if
-                #     lower - but ONLY when both that month and the same month in the
-                #     prior year actually have real data. A 0.00 placeholder (game not
-                #     yet introduced / no activity that month) is left uncolored rather
-                #     than counted as a "decline" against a real prior value. ---
                 st.markdown(f"**{selected_game} — Month-to-Month GGR by Year**")
-
                 month_year = game_df.groupby(['MonthNum', 'Month', 'Year'])['GGR'].sum().reset_index()
                 month_year = month_year.sort_values('MonthNum')
-
                 if not month_year.empty:
-                    # IMPORTANT: do NOT pass fill_value=0 here - that would fill gaps
-                    # with 0 before we can tell a "no data" gap apart from a genuine
-                    # R0.00 result, making has_data below always True and breaking the
-                    # placeholder-vs-real-zero color distinction.
-                    month_table = month_year.pivot_table(
-                        index='Month', columns='Year', values='GGR', aggfunc='sum'
-                    )
-                    # FIX: reindex against the FULL month_order unconditionally, so
-                    # months with zero rows for this game still appear as a row (with
-                    # NaN, converted to 0.00 below) instead of being dropped entirely.
+                    month_table = month_year.pivot_table(index='Month', columns='Year', values='GGR', aggfunc='sum')
                     month_table = month_table.reindex(month_order)
-
                     year_cols_sorted2 = sorted(month_table.columns, key=lambda y: int(y))
                     month_table = month_table[year_cols_sorted2]
-
-                    # Track which (Month, Year) cells had real source rows BEFORE we
-                    # fill missing ones with 0.00, so coloring can tell a genuine R0.00
-                    # apart from a "no data this month" placeholder.
                     has_data = month_table.notna()
                     month_table = month_table.fillna(0.0).astype(float)
                     month_table['Total'] = month_table[year_cols_sorted2].sum(axis=1)
 
-                    # --- Color coding: green if this year's GGR for that month beat
-                    #     the most recent EARLIER year that actually has real data for
-                    #     that same month, red if it fell short. Comparing against the
-                    #     nearest available prior year (not just the immediately
-                    #     preceding column) means single-data-year games still get no
-                    #     coloring (nothing to compare), while games with a gap year
-                    #     still compare correctly across the gap. Cells with no real
-                    #     data this month, or no real prior-year data to compare
-                    #     against, are left uncolored. ---
                     def color_yoy_cell(row):
                         styles = pd.Series('', index=row.index)
                         month_name = row.name
                         for i, year_col in enumerate(year_cols_sorted2):
                             if not has_data.loc[month_name, year_col]:
-                                continue  # this month is a placeholder for this year - leave uncolored
-                            # Find nearest earlier year (if any) that has real data for this month
+                                continue
                             prev_val = None
                             for prev_year_col in reversed(year_cols_sorted2[:i]):
                                 if has_data.loc[month_name, prev_year_col]:
                                     prev_val = row[prev_year_col]
                                     break
                             if prev_val is None:
-                                continue  # no real prior-year data to compare against
+                                continue
                             curr_val = row[year_col]
                             if curr_val > prev_val:
                                 styles[year_col] = 'color: #27ae60; font-weight: bold;'
@@ -938,31 +808,19 @@ if df_parts:
 
                     format_map = {col: "R {:,.2f}" for col in year_cols_sorted2}
                     format_map['Total'] = "R {:,.2f}"
-
                     styled_month_table = month_table.style.format(format_map).apply(color_yoy_cell, axis=1)
-
                     st.dataframe(styled_month_table, use_container_width=True)
                 else:
                     st.warning(f"No month-to-month data available for '{selected_game}'.")
-
         st.divider()
 
-        # --- YEAR-OVER-YEAR GAME PERFORMANCE MATRIX (Green = Good, Red = Bad) ---
+        # --- YEAR-OVER-YEAR GAME PERFORMANCE MATRIX ---
         st.subheader("Year-Over-Year Game Performance Matrix")
-
-        # Create a pivot table showing GGR per game for each year
         matrix_df = df_filtered.pivot_table(index='Game', columns='Year', values='GGR', aggfunc='sum').fillna(0)
-
         if len(matrix_df.columns) >= 2:
-            # Sort year columns chronologically so consecutive pairs are correct
             year_cols_matrix = sorted(matrix_df.columns, key=lambda y: int(y))
             matrix_df = matrix_df[year_cols_matrix]
             latest_year = year_cols_matrix[-1]
-
-            # Calculate variance & growth % for EVERY consecutive year pair present,
-            # e.g. with years [2024, 2025, 2026] this produces:
-            #   Variance 2025 vs 2024, Growth % 2025 vs 2024
-            #   Variance 2026 vs 2025, Growth % 2026 vs 2025
             variance_cols = []
             growth_cols = []
             for prev_y, curr_y in zip(year_cols_matrix[:-1], year_cols_matrix[1:]):
@@ -972,38 +830,24 @@ if df_parts:
                 matrix_df[growth_col] = (matrix_df[var_col] / matrix_df[prev_y].replace(0, 1)) * 100
                 variance_cols.append(var_col)
                 growth_cols.append(growth_col)
-
-            # Sort so the highest revenue drivers (by the latest year) are at the top
             matrix_df = matrix_df.sort_values(by=latest_year, ascending=False)
 
-            # --- The Styling Logic ---
             def color_variance(val):
-                """Colors positive numbers green and negative numbers red"""
-                if pd.isna(val): return ''
+                if pd.isna(val):
+                    return ''
                 color = '#27ae60' if val > 0 else '#c0392b' if val < 0 else 'gray'
                 return f'color: {color}; font-weight: bold;'
 
-            # Format EVERY year column present (not just the last two), otherwise any
-            # year outside the most recent two falls through unformatted as a raw float
-            # like "17478349.010000" instead of "R 17,478,349.01".
             format_map = {year_col: "R {:,.2f}" for year_col in year_cols_matrix}
             for var_col in variance_cols:
                 format_map[var_col] = "R {:,.2f}"
             for growth_col in growth_cols:
                 format_map[growth_col] = "{:,.1f}%"
-
-            styled_matrix = matrix_df.style.format(format_map).map(
-                color_variance, subset=variance_cols + growth_cols
-            )
-
-            # Display the interactive, colored table
+            styled_matrix = matrix_df.style.format(format_map).map(color_variance, subset=variance_cols + growth_cols)
             st.dataframe(styled_matrix, use_container_width=True)
-
         else:
             st.info("💡 To view the Year-Over-Year Conditional Matrix, please ensure 'All Time' or multiple years of data are available in your filter.")
 
         st.divider()
-
-        # --- STRATEGIC ACTION PLAN (branch-level totals already calculated above) ---
         st.subheader("📊 Strategic Action Plan")
         st.markdown(generate_strategic_analysis(selected_view, yoy, total_ggr, total_deposits, top_game))
