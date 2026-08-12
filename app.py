@@ -783,10 +783,31 @@ st.sidebar.header("⏳ Filters")
 # --- MAIN RUN LOGIC ---
 historical_df, historical_file_count = load_historical_from_folder()
 
-# Neon is the single source of truth for uploaded rows. We deliberately do NOT
-# also read the local uploads/ folder — on Streamlit Cloud that folder is
-# ephemeral, and reading it alongside Neon double-counts freshly uploaded files.
-uploaded_df = load_uploaded_rows_from_neon()
+# Uploaded data comes from two real sources:
+#   1. CSVs committed in the local uploads/ folder (historical months)
+#   2. Rows saved to Neon (newer uploads, survive restarts)
+# Both are read, then deduped by Month+Year+Shop so a month present in BOTH
+# is counted once (Neon wins), preventing the doubled-figures problem.
+folder_uploaded_df, _ = load_uploaded_csvs_from_folder()
+neon_uploaded_df = load_uploaded_rows_from_neon()
+
+if folder_uploaded_df.empty:
+    uploaded_df = neon_uploaded_df
+elif neon_uploaded_df.empty:
+    uploaded_df = folder_uploaded_df
+else:
+    # Drop any folder rows whose Month+Year+Shop already exists in Neon
+    neon_keys = set(
+        zip(neon_uploaded_df['Year'].astype(str),
+            neon_uploaded_df['Month'].astype(str),
+            neon_uploaded_df['Shop'].astype(str))
+    )
+    mask = folder_uploaded_df.apply(
+        lambda r: (str(r['Year']), str(r['Month']), str(r['Shop'])) not in neon_keys,
+        axis=1
+    )
+    folder_unique = folder_uploaded_df[mask]
+    uploaded_df = pd.concat([neon_uploaded_df, folder_unique], ignore_index=True)
 
 df_parts = []
 if not historical_df.empty:
