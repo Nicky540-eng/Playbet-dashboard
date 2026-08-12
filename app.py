@@ -782,15 +782,11 @@ st.sidebar.header("⏳ Filters")
 
 # --- MAIN RUN LOGIC ---
 historical_df, historical_file_count = load_historical_from_folder()
-uploaded_df, uploaded_file_count = load_uploaded_csvs_from_folder()
 
-# Load persisted uploaded rows from Neon (survives restarts)
-neon_uploaded_df = load_uploaded_rows_from_neon()
-if not neon_uploaded_df.empty:
-    if uploaded_df.empty:
-        uploaded_df = neon_uploaded_df
-    else:
-        uploaded_df = pd.concat([uploaded_df, neon_uploaded_df], ignore_index=True).drop_duplicates()
+# Neon is the single source of truth for uploaded rows. We deliberately do NOT
+# also read the local uploads/ folder — on Streamlit Cloud that folder is
+# ephemeral, and reading it alongside Neon double-counts freshly uploaded files.
+uploaded_df = load_uploaded_rows_from_neon()
 
 df_parts = []
 if not historical_df.empty:
