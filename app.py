@@ -17,8 +17,15 @@ warnings.filterwarnings('ignore')
 BRANCHES = ["Malvern", "Potchefstroom", "Pretoria", "White River", "Randburg"]
 month_order = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
-# Months to exclude from the dashboard entirely (data removed + filtered on load)
-BLOCKED_MONTHS = {"May", "June", "July"}
+# (Month, Year) combinations to exclude from the dashboard.
+# Only 2026's May/June/July are removed; 2024 and 2025 keep those months.
+BLOCKED_MONTHS = {"May", "June", "July"}   # months affected...
+BLOCKED_YEAR = "2026"                       # ...but only for this year
+
+
+def is_blocked(month, year):
+    """True if this month+year should be excluded from the dashboard."""
+    return str(month) in BLOCKED_MONTHS and str(year) == BLOCKED_YEAR
 YEAR_COLORS = {"2024": "#3498db", "2025": "#e67e22", "2026": "#9b59b6"}
 DEPOSIT_YEAR_COLORS = {"2024": "#27ae60", "2025": "#f1c40f", "2026": "#8e44ad"}
 GAME_PALETTE = px.colors.qualitative.Vivid
@@ -83,13 +90,15 @@ if DATABASE_URL:
                     uploaded_at TIMESTAMP DEFAULT NOW()
                 )
             """))
-            # One-time cleanup: remove blocked months from both data tables.
-            # This is idempotent and runs on every startup.
+            # One-time cleanup: remove 2026 May/June/July from both data tables
+            # (2024 and 2025 keep those months). Idempotent, runs every startup.
             _c.execute(text(
-                "DELETE FROM dashboard_manual_entries WHERE month IN ('May','June','July')"
+                "DELETE FROM dashboard_manual_entries "
+                "WHERE month IN ('May','June','July') AND year = '2026'"
             ))
             _c.execute(text(
-                "DELETE FROM dashboard_uploaded_rows WHERE month IN ('May','June','July')"
+                "DELETE FROM dashboard_uploaded_rows "
+                "WHERE month IN ('May','June','July') AND year = '2026'"
             ))
     except Exception as e:
         st.sidebar.warning(f"DB connection issue: {e}")
@@ -161,8 +170,9 @@ def save_uploaded_rows_to_neon(df_clean, source_file):
     if _engine is None or df_clean is None or df_clean.empty:
         return "error"
 
-    # Drop blocked months before anything else
-    df_clean = df_clean[~df_clean['Month'].isin(BLOCKED_MONTHS)]
+    # Drop only blocked month+year combos (2026 May/June/July) before saving
+    df_clean = df_clean[~df_clean.apply(
+        lambda r: is_blocked(r['Month'], r['Year']), axis=1)]
     if df_clean.empty:
         return "error"
 
@@ -807,8 +817,8 @@ if not st.session_state.manual_2026_data.empty:
 
 if df_parts:
     df = pd.concat(df_parts, ignore_index=True)
-    # Safety net: never show blocked months anywhere in the dashboard
-    df = df[~df['Month'].isin(BLOCKED_MONTHS)]
+    # Safety net: never show 2026 May/June/July (other years keep those months)
+    df = df[~df.apply(lambda r: is_blocked(r['Month'], r['Year']), axis=1)]
     numeric_cols = ['GGR', 'Deposits', 'Paid Out Sum', 'GW Margin %', 'Net Win', 'Net Win Margin']
     df = ensure_numeric(df, numeric_cols)
     if 'Game' in df.columns:
