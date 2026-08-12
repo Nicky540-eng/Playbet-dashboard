@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import warnings
 import re
+import hashlib
 from datetime import datetime
 import os
 from pathlib import Path
@@ -16,6 +17,8 @@ warnings.filterwarnings('ignore')
 BRANCHES = ["Malvern", "Potchefstroom", "Pretoria", "White River", "Randburg"]
 month_order = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
+# Months to exclude from the dashboard entirely (data removed + filtered on load)
+BLOCKED_MONTHS = {"May", "June", "July"}
 YEAR_COLORS = {"2024": "#3498db", "2025": "#e67e22", "2026": "#9b59b6"}
 DEPOSIT_YEAR_COLORS = {"2024": "#27ae60", "2025": "#f1c40f", "2026": "#8e44ad"}
 GAME_PALETTE = px.colors.qualitative.Vivid
@@ -73,6 +76,21 @@ if DATABASE_URL:
                     year VARCHAR(8), month VARCHAR(20), monthnum INTEGER
                 )
             """))
+            _c.execute(text("""
+                CREATE TABLE IF NOT EXISTS dashboard_upload_hashes (
+                    content_hash VARCHAR(64) PRIMARY KEY,
+                    source_file VARCHAR(300),
+                    uploaded_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            # One-time cleanup: remove blocked months from both data tables.
+            # This is idempotent and runs on every startup.
+            _c.execute(text(
+                "DELETE FROM dashboard_manual_entries WHERE month IN ('May','June','July')"
+            ))
+            _c.execute(text(
+                "DELETE FROM dashboard_uploaded_rows WHERE month IN ('May','June','July')"
+            ))
     except Exception as e:
         st.sidebar.warning(f"DB connection issue: {e}")
 
@@ -123,11 +141,45 @@ def clear_manual_entries_neon():
         pass
 
 
+def _content_hash(df_clean):
+    """Stable fingerprint of an upload's meaningful content, order-independent."""
+    sig_cols = ['Shop', 'Game', 'Deposits', 'GGR', 'Year', 'Month', 'MonthNum']
+    try:
+        sig_df = df_clean[sig_cols].copy()
+        sig_rows = sorted(
+            "|".join(str(v) for v in row)
+            for row in sig_df.itertuples(index=False, name=None)
+        )
+        return hashlib.md5("\n".join(sig_rows).encode("utf-8")).hexdigest()
+    except Exception:
+        return None
+
+
 def save_uploaded_rows_to_neon(df_clean, source_file):
+    """Save uploaded rows to Neon, refusing duplicates by content.
+    Returns one of: 'saved', 'duplicate', 'error'."""
     if _engine is None or df_clean is None or df_clean.empty:
-        return
+        return "error"
+
+    # Drop blocked months before anything else
+    df_clean = df_clean[~df_clean['Month'].isin(BLOCKED_MONTHS)]
+    if df_clean.empty:
+        return "error"
+
+    content_hash = _content_hash(df_clean)
+
     try:
         with _engine.begin() as c:
+            # Duplicate check by content fingerprint (catches renamed re-uploads)
+            if content_hash is not None:
+                existing = c.execute(
+                    text("SELECT source_file FROM dashboard_upload_hashes WHERE content_hash = :h"),
+                    {"h": content_hash}
+                ).fetchone()
+                if existing:
+                    return "duplicate"
+
+            # Not a duplicate — replace any prior rows from this filename, then insert
             c.execute(text("DELETE FROM dashboard_uploaded_rows WHERE source_file = :f"),
                       {"f": source_file})
             for _, row in df_clean.iterrows():
@@ -143,8 +195,17 @@ def save_uploaded_rows_to_neon(df_clean, source_file):
                     "nw": float(row['Net Win']), "nwm": float(row['Net Win Margin']),
                     "y": str(row['Year']), "m": str(row['Month']), "mn": int(row['MonthNum'])
                 })
+
+            if content_hash is not None:
+                c.execute(text("""
+                    INSERT INTO dashboard_upload_hashes (content_hash, source_file)
+                    VALUES (:h, :f)
+                    ON CONFLICT (content_hash) DO NOTHING
+                """), {"h": content_hash, "f": source_file})
+        return "saved"
     except Exception as e:
         st.sidebar.warning(f"Could not save uploaded rows: {e}")
+        return "error"
 
 
 def load_uploaded_rows_from_neon():
@@ -358,6 +419,62 @@ def is_per_user_sheet(df_raw):
     return 'game' in first_row and 'shop' in first_row and 'user' in first_row
 
 
+def is_per_user_csv(df):
+    """Detect a per-user slip-summary CSV: has Shop + User + Paid In, but no Game."""
+    cols = [str(c).lower().strip() for c in df.columns]
+    has_shop = 'shop' in cols
+    has_user = 'user' in cols
+    has_paid_in = any(c in ('paid in', 'paidin', 'paid in sum') for c in cols)
+    has_game = 'game' in cols
+    return has_shop and has_user and has_paid_in and not has_game
+
+
+def process_per_user_csv(df, file_date):
+    """Aggregate a per-user slip-summary CSV to one row per branch.
+
+    Deposits  <- sum of 'Paid In'
+    GGR       <- sum of 'Net Win'   (Paid In - Paid Out - adjustments)
+    Paid Out  <- sum of 'Paid Out'
+    """
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+
+    def col(*names):
+        for n in names:
+            for c in df.columns:
+                if str(c).lower().strip() == n:
+                    return c
+        return None
+
+    shop_col = col('shop')
+    paid_in_col = col('paid in', 'paidin', 'paid in sum')
+    net_win_col = col('net win')
+    paid_out_col = col('paid out')
+
+    df['_dep'] = df[paid_in_col].apply(clean_currency_string) if paid_in_col else 0.0
+    df['_ggr'] = df[net_win_col].apply(clean_currency_string) if net_win_col else 0.0
+    df['_po'] = df[paid_out_col].apply(clean_currency_string) if paid_out_col else 0.0
+    df['Shop'] = df[shop_col].astype(str).str.strip() if shop_col else 'Unknown'
+    df['Shop'] = df['Shop'].replace({'Potch': 'Potchefstroom'})
+    df = df[df['Shop'].isin(BRANCHES)]
+    if df.empty:
+        return None
+
+    grouped = df.groupby('Shop', as_index=False).agg(
+        Deposits=('_dep', 'sum'),
+        GGR=('_ggr', 'sum'),
+        **{'Paid Out Sum': ('_po', 'sum')}
+    )
+    grouped['Game'] = 'All Games'
+    grouped['GW Margin %'] = 0.0
+    grouped['Net Win'] = grouped['GGR']
+    grouped['Net Win Margin'] = 0.0
+    grouped['Year'] = str(file_date.year)
+    grouped['Month'] = file_date.strftime('%B')
+    grouped['MonthNum'] = file_date.month
+    return grouped
+
+
 def find_summary_header_rows(df_raw):
     header_rows = []
     for i, row in df_raw.iterrows():
@@ -423,6 +540,15 @@ def load_data(uploaded_files):
             if filename.endswith('.csv'):
                 df = pd.read_csv(file)
                 df.columns = [str(c).strip() for c in df.columns]
+
+                # Per-user slip-summary CSV: aggregate to one row per branch
+                if is_per_user_csv(df) and file_date is not None:
+                    processed = process_per_user_csv(df, file_date)
+                    df_clean = enforce_schema(processed)
+                    if df_clean is not None:
+                        all_data.append(df_clean)
+                    continue
+
                 deposit_col = find_deposit_column(df)
                 if deposit_col:
                     df = df.rename(columns={deposit_col: 'Deposits'})
@@ -507,6 +633,16 @@ def load_uploaded_csvs_from_folder():
                 continue
             df = pd.read_csv(file_path)
             df.columns = [str(c).strip() for c in df.columns]
+
+            # Per-user slip-summary CSV: aggregate to one row per branch
+            if is_per_user_csv(df):
+                processed = process_per_user_csv(df, file_date)
+                df_clean = enforce_schema(processed)
+                if df_clean is not None:
+                    all_data.append(df_clean)
+                    file_count += 1
+                continue
+
             deposit_col = find_deposit_column(df)
             if deposit_col:
                 df = df.rename(columns={deposit_col: 'Deposits'})
@@ -587,24 +723,28 @@ uploaded_files = st.sidebar.file_uploader(
 )
 st.sidebar.info("💡 Ensure CSV filenames include the month and year (e.g., 'May 2026.csv').")
 
-# Save uploaded files: parse and persist rows to Neon (survives restarts)
+# Save uploaded files: parse and persist rows to Neon, blocking duplicates
 if uploaded_files:
-    saved_files = []
+    if _engine is None:
+        st.sidebar.error("❌ No database connection — upload won't persist.")
+    saved_files, dup_files = [], []
     for file in uploaded_files:
         try:
             parsed = load_data([file])
-            if parsed is not None and not parsed.empty:
-                save_uploaded_rows_to_neon(parsed, file.name)
+            if parsed is None or parsed.empty:
+                st.sidebar.warning(f"⚠️ {file.name}: parsed to 0 rows (check headers / filename month-year).")
+                continue
+            result = save_uploaded_rows_to_neon(parsed, file.name)
+            if result == "saved":
                 saved_files.append(file.name)
+            elif result == "duplicate":
+                dup_files.append(file.name)
+            elif result == "error":
+                st.sidebar.warning(f"⚠️ {file.name}: nothing saved (blocked month or DB issue).")
         except Exception as e:
             st.sidebar.warning(f"Could not process {file.name}: {e}")
-        try:
-            save_path = Path(UPLOAD_FOLDER) / file.name
-            if not save_path.exists():
-                with open(save_path, 'wb') as f:
-                    f.write(file.getbuffer())
-        except Exception:
-            pass
+    if dup_files:
+        st.sidebar.error(f"🚫 Already uploaded — blocked: {', '.join(dup_files)}")
     if saved_files:
         st.sidebar.success(f"✅ Saved {len(saved_files)} file(s) to database")
         st.cache_data.clear()
@@ -615,7 +755,8 @@ st.sidebar.divider()
 # --- SIDEBAR: MANUAL ENTRY ---
 st.sidebar.header("📥 Enter Manual Actuals")
 entry_shop = st.sidebar.selectbox("Select Branch:", BRANCHES)
-entry_month = st.sidebar.selectbox("Select Month:", month_order)
+# Blocked months are not selectable for manual entry either
+entry_month = st.sidebar.selectbox("Select Month:", [m for m in month_order if m not in BLOCKED_MONTHS])
 entry_game = st.sidebar.text_input("Enter Game Name:", value="Lucky #1")
 entry_deposits = st.sidebar.number_input("Enter Deposits Amount (R):", min_value=0.0, format="%.2f")
 entry_ggr = st.sidebar.number_input("Enter GGR Amount (R):", min_value=0.0, format="%.2f")
@@ -666,6 +807,8 @@ if not st.session_state.manual_2026_data.empty:
 
 if df_parts:
     df = pd.concat(df_parts, ignore_index=True)
+    # Safety net: never show blocked months anywhere in the dashboard
+    df = df[~df['Month'].isin(BLOCKED_MONTHS)]
     numeric_cols = ['GGR', 'Deposits', 'Paid Out Sum', 'GW Margin %', 'Net Win', 'Net Win Margin']
     df = ensure_numeric(df, numeric_cols)
     if 'Game' in df.columns:
