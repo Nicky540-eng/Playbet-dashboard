@@ -17,15 +17,9 @@ warnings.filterwarnings('ignore')
 BRANCHES = ["Malvern", "Potchefstroom", "Pretoria", "White River", "Randburg"]
 month_order = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
-# (Month, Year) combinations to exclude from the dashboard.
-# Only 2026's May/June/July are removed; 2024 and 2025 keep those months.
-BLOCKED_MONTHS = {"May", "June", "July"}   # months affected...
-BLOCKED_YEAR = "2026"                       # ...but only for this year
-
-
 def is_blocked(month, year):
-    """True if this month+year should be excluded from the dashboard."""
-    return str(month) in BLOCKED_MONTHS and str(year) == BLOCKED_YEAR
+    """No months are blocked."""
+    return False
 YEAR_COLORS = {"2024": "#3498db", "2025": "#e67e22", "2026": "#9b59b6"}
 DEPOSIT_YEAR_COLORS = {"2024": "#27ae60", "2025": "#f1c40f", "2026": "#8e44ad"}
 GAME_PALETTE = px.colors.qualitative.Vivid
@@ -90,16 +84,7 @@ if DATABASE_URL:
                     uploaded_at TIMESTAMP DEFAULT NOW()
                 )
             """))
-            # One-time cleanup: remove 2026 May/June/July from both data tables
-            # (2024 and 2025 keep those months). Idempotent, runs every startup.
-            _c.execute(text(
-                "DELETE FROM dashboard_manual_entries "
-                "WHERE month IN ('May','June','July') AND year = '2026'"
-            ))
-            _c.execute(text(
-                "DELETE FROM dashboard_uploaded_rows "
-                "WHERE month IN ('May','June','July') AND year = '2026'"
-            ))
+            # (No month/year cleanup — all data is retained.)
     except Exception as e:
         st.sidebar.warning(f"DB connection issue: {e}")
 
@@ -766,7 +751,7 @@ st.sidebar.divider()
 st.sidebar.header("📥 Enter Manual Actuals")
 entry_shop = st.sidebar.selectbox("Select Branch:", BRANCHES)
 # Blocked months are not selectable for manual entry either
-entry_month = st.sidebar.selectbox("Select Month:", [m for m in month_order if m not in BLOCKED_MONTHS])
+entry_month = st.sidebar.selectbox("Select Month:", month_order)
 entry_game = st.sidebar.text_input("Enter Game Name:", value="Lucky #1")
 entry_deposits = st.sidebar.number_input("Enter Deposits Amount (R):", min_value=0.0, format="%.2f")
 entry_ggr = st.sidebar.number_input("Enter GGR Amount (R):", min_value=0.0, format="%.2f")
