@@ -293,12 +293,12 @@ def build_comparison_workbook(tables: dict, meta: str) -> bytes:
                 findings.append(("BEST VALUE", f"{best.iloc[0]} produced the most gross win (best value month)."))
             if len(worst):
                 findings.append(("WORST VALUE", f"{worst.iloc[0]} produced the least gross win (worst value month)."))
-    if not gid.empty and "Change" in gid.columns:
+    if not gid.empty and "Change in Betslips" in gid.columns:
         top = gid.iloc[0]
         bottom = gid.iloc[-1]
-        findings.append(("TOP RISER", f"{top['Game']} rose {int(top['Change']):+,} betslips ({top['Change %']:+.1f}%) from first to last month."))
-        if bottom["Change"] < 0:
-            findings.append(("TOP FALLER", f"{bottom['Game']} fell {int(bottom['Change']):+,} betslips ({bottom['Change %']:+.1f}%) over the quarter."))
+        findings.append(("TOP RISER", f"{top['Game']} rose {int(top['Change in Betslips']):+,} betslips ({top['Change (%)']:+.1f}%) from first to last month."))
+        if bottom["Change in Betslips"] < 0:
+            findings.append(("TOP FALLER", f"{bottom['Game']} fell {int(bottom['Change in Betslips']):+,} betslips ({bottom['Change (%)']:+.1f}%) over the quarter."))
     if not gbm.empty:
         kpis.setdefault("Games Tracked", len(gbm))
     if not cbm.empty:
@@ -319,14 +319,14 @@ def build_comparison_workbook(tables: dict, meta: str) -> bytes:
         ("Games Increase-Decrease", "Games Increase-Decrease",
          "Games — Betslip Increase / Decrease",
          "First month vs last month; green = growth, red = decline. " + meta,
-         False, ["Trend"], ["Change", "Change %"]),
+         False, ["Trend"], ["Change in Betslips", "Change (%)"]),
         ("Games per Branch", "Games per Branch",
          "Games per Branch",
-         "Betslips, paid in, gross win and GWM% per game, per branch. " + meta,
+         "Betslips, Paid In, Gross Win and Gross Win Margin % per game, per branch. " + meta,
          False, [], []),
         ("Games GWM", "Games GWM",
          "Games — Gross Win Margin %",
-         "GWM% = Gross Win ÷ Paid In, by month and for the whole quarter. " + meta,
+         "Gross Win Margin % = Gross Win ÷ Paid In, by month and for the whole quarter. " + meta,
          False, [], []),
         ("Cashier Betslips by Month", "Cashier Betslips by Month",
          "Cashiers — Betslip Count by Month",
