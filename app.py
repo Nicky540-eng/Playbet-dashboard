@@ -189,6 +189,12 @@ def save_uploaded_rows_to_neon(df_clean, source_file):
 
     content_hash = _content_hash(df_clean)
 
+    # The GGR/Deposits summary must hold ONE set of rows per Month+Year. Two
+    # different files for the same month (e.g. a slip export and a cash-ops export)
+    # must not both be summed in. So we key on the (Year, Month) combos in this file
+    # and replace any existing summary rows for those months before inserting.
+    ym_pairs = set(zip(df_clean['Year'].astype(str), df_clean['Month'].astype(str)))
+
     try:
         with _engine.begin() as c:
             # Duplicate check by content fingerprint (catches renamed re-uploads)
@@ -200,9 +206,12 @@ def save_uploaded_rows_to_neon(df_clean, source_file):
                 if existing:
                     return "duplicate"
 
-            # Not a duplicate — replace any prior rows from this filename, then insert
-            c.execute(text("DELETE FROM dashboard_uploaded_rows WHERE source_file = :f"),
-                      {"f": source_file})
+            # Replace any prior summary rows for the SAME Month+Year (from any file),
+            # so a month is only ever counted once in the GGR/Deposits chart.
+            for (yy, mm) in ym_pairs:
+                c.execute(text(
+                    "DELETE FROM dashboard_uploaded_rows WHERE year = :y AND month = :m"),
+                    {"y": yy, "m": mm})
             for _, row in df_clean.iterrows():
                 c.execute(text("""
                     INSERT INTO dashboard_uploaded_rows
@@ -850,6 +859,13 @@ def load_uploaded_csvs_from_folder():
                 continue
             df = pd.read_csv(file_path)
             df.columns = [str(c).strip() for c in df.columns]
+
+            # Cash Operations exports must NEVER feed the GGR/Deposits summary —
+            # they are per game×cashier and summing their Gross Win double-counts
+            # the month (this was the cause of the inflated May bar). Skip them here;
+            # they belong only to the game-comparison table.
+            if is_cash_ops_csv(df):
+                continue
 
             # Per-user slip-summary CSV: aggregate to one row per branch
             if is_per_user_csv(df):
