@@ -910,69 +910,117 @@ def ensure_numeric(df, columns):
 # --- APP LAYOUT ---
 st.title("Playbet Dashboard")
 
-st.sidebar.header("📤 Upload CSVs")
-uploaded_files = st.sidebar.file_uploader(
-    "Slip Summary and/or Cash Operations exports",
-    accept_multiple_files=True,
-    type=["csv"],
-    help="Upload Slip Summary and Cash Operations CSVs. Saved to the database permanently."
+st.sidebar.header("📤 Upload Data")
+st.sidebar.caption("Two separate uploaders — put each file in its own box.")
+
+# ---- Uploader 1: SLIP SUMMARY (per-cashier) ----
+st.sidebar.markdown("**1 · Slip Summary** (per cashier)")
+slip_files = st.sidebar.file_uploader(
+    "Slip Summary CSV(s)",
+    accept_multiple_files=True, type=["csv"], key="slip_uploader",
+    help="Per-cashier slip export. Feeds the cashier comparison AND the GGR/Deposits dashboard."
 )
+
+# ---- Uploader 2: CASH OPERATIONS (per game) ----
+st.sidebar.markdown("**2 · Cash Operations** (per game)")
+cash_files = st.sidebar.file_uploader(
+    "Cash Operations CSV(s)",
+    accept_multiple_files=True, type=["csv"], key="cash_uploader",
+    help="Per-game cash-ops export. Feeds the game comparison only — kept out of the GGR chart."
+)
+
 st.sidebar.info("💡 Filenames must include month and year (e.g., 'May 2026.csv').")
 
-# Save uploaded files: parse and persist to Neon.
-# Each file feeds up to three stores:
-#   • the existing GGR/Deposits summary (dashboard_uploaded_rows)
-#   • full per-cashier slip detail (dashboard_slip_rows)      [Slip Summary files]
-#   • full per-game detail          (dashboard_game_rows)     [Cash Operations files]
-if uploaded_files:
-    if _engine is None:
-        st.sidebar.error("❌ No database connection — upload won't persist.")
-    saved_files, dup_files = [], []
-    for file in uploaded_files:
+# Save uploads. Each uploader routes to ONLY the correct destination, so a
+# Cash Operations file can never be summed into the GGR/Deposits chart (which
+# was the cause of the inflated May bar).
+def _process_uploads(files, kind):
+    """kind: 'slip' or 'cash'. Returns (saved_names, dup_names)."""
+    from io import BytesIO
+    saved, dups = [], []
+    for file in files:
         try:
-            from io import BytesIO
             file_date = extract_date_from_filename(file.name.lower())
-            # Read the raw bytes ONCE. A Streamlit UploadedFile is a stream, so the
-            # first pd.read_csv would leave the cursor at EOF and every later read
-            # would see an empty file ("No columns to parse"). We rewind for each use.
+            if file_date is None:
+                st.sidebar.warning(f"⚠️ {file.name}: no month/year in filename — skipped.")
+                continue
             file_bytes = file.getvalue()
-
             raw = pd.read_csv(BytesIO(file_bytes))
             raw.columns = [str(c).strip() for c in raw.columns]
 
             outcomes = []
-
-            # Full detail for the comparison section
-            if file_date is not None:
+            if kind == "cash":
+                # Cash Operations -> GAME detail table ONLY. Never the GGR summary.
                 if is_cash_ops_csv(raw):
                     outcomes.append(save_game_rows_to_neon(raw, file_date, file.name))
-                elif is_per_user_csv(raw):
+                else:
+                    st.sidebar.warning(f"⚠️ {file.name}: doesn't look like a Cash Operations export.")
+                    continue
+            else:  # slip
+                if is_per_user_csv(raw):
+                    # cashier detail for the comparison
                     outcomes.append(save_slip_rows_to_neon(raw, file_date, file.name))
-
-            # Existing summary path (GGR/Deposits) — keeps the main dashboard working.
-            # Rewind so load_data reads the file from the start again.
-            try:
-                file.seek(0)
-            except Exception:
-                pass
-            parsed = load_data([file])
-            if parsed is not None and not parsed.empty:
-                outcomes.append(save_uploaded_rows_to_neon(parsed, file.name))
+                    # AND the existing GGR/Deposits summary dashboard
+                    try:
+                        file.seek(0)
+                    except Exception:
+                        pass
+                    parsed = load_data([file])
+                    if parsed is not None and not parsed.empty:
+                        outcomes.append(save_uploaded_rows_to_neon(parsed, file.name))
+                else:
+                    st.sidebar.warning(f"⚠️ {file.name}: doesn't look like a Slip Summary export.")
+                    continue
 
             if not outcomes:
-                st.sidebar.warning(f"⚠️ {file.name}: parsed to 0 rows (check headers / filename month-year).")
+                st.sidebar.warning(f"⚠️ {file.name}: parsed to 0 rows.")
             elif "saved" in outcomes:
-                saved_files.append(file.name)
+                saved.append(file.name)
             elif all(o == "duplicate" for o in outcomes):
-                dup_files.append(file.name)
+                dups.append(file.name)
         except Exception as e:
             st.sidebar.warning(f"Could not process {file.name}: {e}")
-    if dup_files:
-        st.sidebar.error(f"🚫 Already uploaded — blocked: {', '.join(dup_files)}")
-    if saved_files:
-        st.sidebar.success(f"✅ Saved {len(saved_files)} file(s) to database")
+    return saved, dups
+
+
+if slip_files or cash_files:
+    if _engine is None:
+        st.sidebar.error("❌ No database connection — upload won't persist.")
+    all_saved, all_dups = [], []
+    if slip_files:
+        s, d = _process_uploads(slip_files, "slip")
+        all_saved += s
+        all_dups += d
+    if cash_files:
+        s, d = _process_uploads(cash_files, "cash")
+        all_saved += s
+        all_dups += d
+    if all_dups:
+        st.sidebar.error(f"🚫 Already uploaded — blocked: {', '.join(all_dups)}")
+    if all_saved:
+        st.sidebar.success(f"✅ Saved {len(all_saved)} file(s) to database")
         st.cache_data.clear()
         st.rerun()
+
+# ---- Maintenance: clear ingested data so you can re-upload cleanly ----
+with st.sidebar.expander("🧹 Maintenance"):
+    st.caption("Clears uploaded rows so you can re-upload through the two boxes above. "
+               "Use this once to remove the old mixed data behind the inflated May bar.")
+    if st.button("Clear uploaded & comparison data"):
+        if _engine is not None:
+            try:
+                with _engine.begin() as c:
+                    c.execute(text("DELETE FROM dashboard_uploaded_rows"))
+                    c.execute(text("DELETE FROM dashboard_slip_rows"))
+                    c.execute(text("DELETE FROM dashboard_game_rows"))
+                    c.execute(text("DELETE FROM dashboard_upload_hashes"))
+                st.cache_data.clear()
+                st.success("Cleared. Re-upload your Slip Summary and Cash Operations files.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not clear: {e}")
+        else:
+            st.error("No database connection.")
 
 # --- SIDEBAR: FILTERS ---
 st.sidebar.divider()
