@@ -915,11 +915,37 @@ def load_uploaded_csvs_from_folder():
             df = pd.read_csv(file_path)
             df.columns = [str(c).strip() for c in df.columns]
 
-            # Cash Operations exports must NEVER feed the GGR/Deposits summary —
-            # they are per game×cashier and summing their Gross Win double-counts
-            # the month (this was the cause of the inflated May bar). Skip them here;
-            # they belong only to the game-comparison table.
+            # Cash Operations exports are per game×cashier. Aggregate to one row per
+            # branch (sum Gross Win -> GGR, sum Paid In Sum -> Deposits) so the month
+            # total is correct. The merge stage below drops any month that already has
+            # a slip figure, so a month is never counted twice.
             if is_cash_ops_csv(df):
+                sub = df.copy()
+                shop_c = _col(sub, 'shop')
+                sub['Shop'] = sub[shop_c].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
+                sub = sub[sub['Shop'].isin(BRANCHES)]
+                if sub.empty:
+                    continue
+                gin = _col(sub, 'paid in sum')
+                gw = _col(sub, 'gross win')
+                po = _col(sub, 'paid out sum')
+                sub['_dep'] = sub[gin].apply(clean_currency_string) if gin else 0.0
+                sub['_ggr'] = sub[gw].apply(clean_currency_string) if gw else 0.0
+                sub['_po'] = sub[po].apply(clean_currency_string) if po else 0.0
+                grouped = sub.groupby('Shop', as_index=False).agg(
+                    Deposits=('_dep', 'sum'), GGR=('_ggr', 'sum'),
+                    **{'Paid Out Sum': ('_po', 'sum')})
+                grouped['Game'] = 'All Games'
+                grouped['GW Margin %'] = 0.0
+                grouped['Net Win'] = grouped['GGR']
+                grouped['Net Win Margin'] = 0.0
+                grouped['Year'] = str(file_date.year)
+                grouped['Month'] = file_date.strftime('%B')
+                grouped['MonthNum'] = file_date.month
+                df_clean = enforce_schema(grouped)
+                if df_clean is not None:
+                    all_data.append(df_clean)
+                    file_count += 1
                 continue
 
             # Per-user slip-summary CSV: aggregate to one row per branch
@@ -1107,6 +1133,7 @@ historical_df, historical_file_count = load_historical_from_folder()
 # is counted once (Neon wins), preventing the doubled-figures problem.
 folder_uploaded_df, _ = load_uploaded_csvs_from_folder()
 neon_uploaded_df = load_uploaded_rows_from_neon()
+manual_df = load_manual_entries_from_neon()
 
 if folder_uploaded_df.empty:
     uploaded_df = neon_uploaded_df
@@ -1131,6 +1158,8 @@ if not historical_df.empty:
     df_parts.append(historical_df)
 if not uploaded_df.empty:
     df_parts.append(uploaded_df)
+if manual_df is not None and not manual_df.empty:
+    df_parts.append(manual_df)
 
 if df_parts:
     df = pd.concat(df_parts, ignore_index=True)
@@ -1348,46 +1377,49 @@ if df_parts:
                     "Cashier GWM":             cmp.cashier_gwm(slip_s, comp_quarter),
                 }
 
-                # --- Best/worst month ---
-                st.subheader("Busiest & least-busy month · best & worst value")
-                bw = comp_tables["Best-Worst Month"]
-                if not bw.empty:
-                    st.dataframe(bw, use_container_width=True, hide_index=True)
-                    if "Betslips" in bw.columns:
+                def show(df, caption=None):
+                    if df is None or df.empty:
+                        st.info("No data for this selection.")
+                        return
+                    if caption:
+                        st.caption(caption)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+
+                tab_sum, tab_games, tab_cash = st.tabs(["📅 Summary", "🎮 Games", "🧑‍💼 Cashiers"])
+
+                with tab_sum:
+                    st.subheader("Busiest & least-busy month · best & worst value")
+                    bw = comp_tables["Best-Worst Month"]
+                    show(bw)
+                    if not bw.empty and "Betslips" in bw.columns:
                         fig_bw = px.bar(bw, x="Month", y="Betslips", color="Month",
                                         template="plotly_white")
-                        fig_bw.update_layout(showlegend=False, yaxis_tickformat=",.0f")
+                        fig_bw.update_layout(showlegend=False, yaxis_tickformat=",.0f",
+                                             margin=dict(t=10, b=10))
                         st.plotly_chart(fig_bw, use_container_width=True)
 
-                # --- Games ---
-                st.subheader("Games — betslip count by month (side by side)")
-                st.dataframe(comp_tables["Games Betslips by Month"], use_container_width=True, hide_index=True)
+                with tab_games:
+                    st.subheader("Betslip count by month")
+                    show(comp_tables["Games Betslips by Month"])
+                    st.subheader("Betslip increases & decreases")
+                    show(comp_tables["Games Increase-Decrease"])
+                    st.subheader("Games per branch")
+                    show(comp_tables["Games per Branch"])
+                    st.subheader("GWM% over the quarter")
+                    show(comp_tables["Games GWM"], "GWM% = Gross Win ÷ Paid In")
 
-                st.subheader("Games — betslip increases & decreases (first → last month)")
-                gid = comp_tables["Games Increase-Decrease"]
-                st.dataframe(gid, use_container_width=True, hide_index=True)
+                with tab_cash:
+                    st.subheader("Betslip count by month")
+                    show(comp_tables["Cashier Betslips by Month"])
+                    st.subheader("GWM% over the quarter")
+                    show(comp_tables["Cashier GWM"],
+                        "Per-month from the slip file's GW Margin %; quarter column is paid-in weighted.")
 
-                st.subheader("Games per branch")
-                st.dataframe(comp_tables["Games per Branch"], use_container_width=True, hide_index=True)
-
-                st.subheader("Games — GWM% over the quarter")
-                st.caption("GWM% = Gross Win ÷ Paid In")
-                st.dataframe(comp_tables["Games GWM"], use_container_width=True, hide_index=True)
-
-                # --- Cashiers ---
-                st.subheader("Cashiers — betslip count by month (side by side)")
-                st.dataframe(comp_tables["Cashier Betslips by Month"], use_container_width=True, hide_index=True)
-
-                st.subheader("Cashiers — GWM% over the quarter")
-                st.caption("Per-month from the slip file's GW Margin %; quarter column is paid-in weighted.")
-                st.dataframe(comp_tables["Cashier GWM"], use_container_width=True, hide_index=True)
-
-                # --- Excel download ---
                 st.divider()
                 xlsx_bytes = build_comparison_workbook(comp_tables, scope_label)
                 safe = scope_label.replace(" ", "_").replace("·", "-").replace("/", "-")
                 st.download_button(
-                    "⬇️ Download comparison (Excel, data + charts)",
+                    "⬇️ Download comparison (Excel)",
                     data=xlsx_bytes,
                     file_name=f"Playbet_Comparison_{safe}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
