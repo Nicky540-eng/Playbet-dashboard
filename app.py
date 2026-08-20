@@ -455,6 +455,61 @@ def load_game_rows_from_neon():
         return pd.DataFrame()
 
 
+@st.cache_data
+def load_comparison_detail_from_folder():
+    """Scan the uploads/ folder and build slip + game detail frames for the
+    comparison, so months already committed to the repo appear without re-upload.
+    Returns (slip_df, game_df)."""
+    slip_parts, game_parts = [], []
+    for file_path in glob.glob(os.path.join(UPLOAD_FOLDER, "*.csv")):
+        try:
+            filename = os.path.basename(file_path)
+            file_date = extract_date_from_filename(filename)
+            if file_date is None:
+                continue
+            df = pd.read_csv(file_path)
+            df.columns = [str(c).strip() for c in df.columns]
+            year = str(file_date.year); month = file_date.strftime('%B'); mn = file_date.month
+
+            if is_cash_ops_csv(df):
+                sub = df.copy()
+                sub['Shop'] = sub[_col(sub, 'shop')].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
+                sub = sub[sub['Shop'].isin(BRANCHES)]
+                if sub.empty:
+                    continue
+                game_parts.append(pd.DataFrame({
+                    'Shop': sub['Shop'], 'Game': sub[_col(sub, 'game')].apply(clean_game_name),
+                    'BetSlips': sub[_col(sub, 'paid in count')].apply(clean_currency_string).astype(int),
+                    'PaidIn': sub[_col(sub, 'paid in sum')].apply(clean_currency_string),
+                    'PaidOutCount': 0,
+                    'PaidOut': sub[_col(sub, 'paid out sum')].apply(clean_currency_string) if _col(sub, 'paid out sum') else 0.0,
+                    'GrossWin': sub[_col(sub, 'gross win')].apply(clean_currency_string),
+                    'Year': year, 'Month': month, 'MonthNum': mn}))
+            elif is_per_user_csv(df):
+                sub = df.copy()
+                sub['Shop'] = sub[_col(sub, 'shop')].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
+                sub = sub[sub['Shop'].isin(BRANCHES)]
+                if sub.empty:
+                    continue
+                pin = _col(sub, 'paid in', 'paidin', 'paid in sum')
+                pout = _col(sub, 'paid out')
+                gw = _col(sub, 'gw margin %', 'gw margin')
+                nw = _col(sub, 'net win')
+                slip_parts.append(pd.DataFrame({
+                    'Shop': sub['Shop'], 'Cashier': sub[_col(sub, 'user')].astype(str).str.strip(),
+                    'BetSlips': sub[_col(sub, 'bet slips')].apply(clean_currency_string).astype(int),
+                    'PaidIn': sub[pin].apply(clean_currency_string) if pin else 0.0,
+                    'PaidOut': sub[pout].apply(clean_currency_string) if pout else 0.0,
+                    'GWMargin': sub[gw].apply(clean_currency_string) if gw else 0.0,
+                    'NetWin': sub[nw].apply(clean_currency_string) if nw else 0.0,
+                    'Year': year, 'Month': month, 'MonthNum': mn}))
+        except Exception:
+            continue
+    slip_df = pd.concat(slip_parts, ignore_index=True) if slip_parts else pd.DataFrame()
+    game_df = pd.concat(game_parts, ignore_index=True) if game_parts else pd.DataFrame()
+    return slip_df, game_df
+
+
 # --- PRECISION HELPER FUNCTIONS ---
 def clean_currency_string(val):
     if pd.isna(val) or val == '' or val == 'nan' or val == 'NaN':
@@ -1239,6 +1294,23 @@ if df_parts:
         slip_full = load_slip_rows_from_neon()
         game_full = load_game_rows_from_neon()
 
+        # Also read detail straight from the repo uploads/ folder, so months already
+        # committed there appear in the comparison without re-uploading. Neon wins on
+        # any (Year, Month, Shop) overlap to avoid double-counting.
+        folder_slip, folder_game = load_comparison_detail_from_folder()
+
+        def _merge_detail(neon_df, folder_df, keys):
+            if folder_df is None or folder_df.empty:
+                return neon_df
+            if neon_df is None or neon_df.empty:
+                return folder_df
+            existing = set(zip(*[neon_df[k].astype(str) for k in keys]))
+            mask = folder_df.apply(lambda r: tuple(str(r[k]) for k in keys) not in existing, axis=1)
+            return pd.concat([neon_df, folder_df[mask]], ignore_index=True)
+
+        slip_full = _merge_detail(slip_full, folder_slip, ["Year", "Month", "Shop"])
+        game_full = _merge_detail(game_full, folder_game, ["Year", "Month", "Shop"])
+
         if slip_full.empty and game_full.empty:
             st.info("💡 Upload a Slip Summary and/or Cash Operations CSV to build the quarterly comparison. "
                     "These carry per-cashier and per-game betslip detail the comparison needs.")
@@ -1294,12 +1366,6 @@ if df_parts:
                 st.subheader("Games — betslip increases & decreases (first → last month)")
                 gid = comp_tables["Games Increase-Decrease"]
                 st.dataframe(gid, use_container_width=True, hide_index=True)
-                if not gid.empty and "Change" in gid.columns:
-                    fig_gid = px.bar(gid, x="Game", y="Change", color="Trend",
-                                     template="plotly_white",
-                                     color_discrete_map={"increase": "#27ae60", "decrease": "#c0392b", "flat": "#95a5a6"})
-                    fig_gid.update_layout(yaxis_tickformat=",.0f")
-                    st.plotly_chart(fig_gid, use_container_width=True)
 
                 st.subheader("Games per branch")
                 st.dataframe(comp_tables["Games per Branch"], use_container_width=True, hide_index=True)
