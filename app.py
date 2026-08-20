@@ -930,8 +930,14 @@ if uploaded_files:
     saved_files, dup_files = [], []
     for file in uploaded_files:
         try:
+            from io import BytesIO
             file_date = extract_date_from_filename(file.name.lower())
-            raw = pd.read_csv(file)
+            # Read the raw bytes ONCE. A Streamlit UploadedFile is a stream, so the
+            # first pd.read_csv would leave the cursor at EOF and every later read
+            # would see an empty file ("No columns to parse"). We rewind for each use.
+            file_bytes = file.getvalue()
+
+            raw = pd.read_csv(BytesIO(file_bytes))
             raw.columns = [str(c).strip() for c in raw.columns]
 
             outcomes = []
@@ -943,7 +949,12 @@ if uploaded_files:
                 elif is_per_user_csv(raw):
                     outcomes.append(save_slip_rows_to_neon(raw, file_date, file.name))
 
-            # Existing summary path (GGR/Deposits) — keeps the main dashboard working
+            # Existing summary path (GGR/Deposits) — keeps the main dashboard working.
+            # Rewind so load_data reads the file from the start again.
+            try:
+                file.seek(0)
+            except Exception:
+                pass
             parsed = load_data([file])
             if parsed is not None and not parsed.empty:
                 outcomes.append(save_uploaded_rows_to_neon(parsed, file.name))
