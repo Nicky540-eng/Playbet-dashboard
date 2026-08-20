@@ -52,6 +52,11 @@ def _get_db_url():
         url = url.replace("postgres://", "postgresql://", 1)
     if url.startswith("postgresql+psycopg://"):
         url = url.replace("postgresql+psycopg://", "postgresql://", 1)
+    # channel_binding=require makes the psycopg2 handshake hang on some hosts
+    # (Streamlit Cloud). sslmode=require alone is sufficient for Neon, so strip it.
+    url = url.replace("&channel_binding=require", "").replace("?channel_binding=require&", "?")
+    url = url.replace("channel_binding=require", "")
+    url = url.replace("?&", "?").rstrip("&")
     return url
 
 
@@ -59,7 +64,10 @@ DATABASE_URL = _get_db_url()
 _engine = None
 if DATABASE_URL:
     try:
-        _engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+        _engine = create_engine(
+            DATABASE_URL, pool_pre_ping=True,
+            connect_args={"connect_timeout": 10},  # fail fast instead of hanging
+        )
         with _engine.begin() as _c:
             _c.execute(text("""
                 CREATE TABLE IF NOT EXISTS dashboard_manual_entries (
