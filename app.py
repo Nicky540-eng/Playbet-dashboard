@@ -510,6 +510,91 @@ def load_comparison_detail_from_folder():
     return slip_df, game_df
 
 
+@st.cache_data
+def load_comparison_detail_from_historical():
+    """Parse the 'Games and Users' sheets in the historical_data/ Excel files into
+    per-cashier×game rows, so the comparison spans 2024 and 2025 too. These sheets
+    carry Game, Shop, User, Bet Slips, Paid In, Paid Out, Gross Win, GW Margin %,
+    with 2024 and 2025 rows separated by the First Slip Issued date.
+    Returns (slip_df, game_df) in the same shape as the folder loader."""
+    import openpyxl
+    rows = []
+
+    def _yr(d):
+        if hasattr(d, "year"):
+            return d.year
+        m = re.search(r"/(\d{2})\b", str(d))
+        return 2000 + int(m.group(1)) if m else None
+
+    def _month_from_sheet(name):
+        for i, m in enumerate(month_order, 1):
+            if m.lower()[:3] in name.lower():
+                return m, i
+        return None, None
+
+    files = glob.glob(os.path.join(HISTORICAL_FOLDER, "*.xlsx")) + \
+            glob.glob(os.path.join(HISTORICAL_FOLDER, "*.xls"))
+    for fp in files:
+        try:
+            wb = openpyxl.load_workbook(fp, data_only=True, read_only=True)
+        except Exception:
+            continue
+        for sh in wb.sheetnames:
+            if "games and users" not in sh.lower():
+                continue
+            month, mn = _month_from_sheet(sh)
+            if not month:
+                continue
+            ws = wb[sh]
+            it = ws.iter_rows(values_only=True)
+            try:
+                header = next(it)
+            except StopIteration:
+                continue
+            idx = {str(h).strip().lower(): i for i, h in enumerate(header) if h}
+            if "user" not in idx or "shop" not in idx or "bet slips" not in idx:
+                continue
+
+            def g(row, key):
+                return row[idx[key]] if key in idx and idx[key] < len(row) else None
+
+            for row in it:
+                if not row or row[0] is None:
+                    continue
+                shop = str(g(row, "shop")).strip().replace("Potch", "Potchefstroom")
+                if shop not in BRANCHES:
+                    continue
+                y = _yr(g(row, "first slip issued"))
+                if y not in (2024, 2025):
+                    continue
+                rows.append({
+                    "Year": str(y), "Month": month, "MonthNum": mn, "Shop": shop,
+                    "Cashier": str(g(row, "user")).strip(),
+                    "Game": clean_game_name(g(row, "game")),
+                    "BetSlips": int(clean_currency_string(g(row, "bet slips"))),
+                    "PaidIn": clean_currency_string(g(row, "paid in")),
+                    "PaidOut": clean_currency_string(g(row, "paid out")),
+                    "GrossWin": clean_currency_string(g(row, "gross win")),
+                    "GWMargin": clean_currency_string(g(row, "gw margin %")),
+                    "NetWin": clean_currency_string(g(row, "net win")),
+                })
+    if not rows:
+        return pd.DataFrame(), pd.DataFrame()
+
+    detail = pd.DataFrame(rows)
+    # slip frame: per cashier (sum betslips across games for that cashier/month)
+    slip_df = (detail.groupby(["Year", "Month", "MonthNum", "Shop", "Cashier"], as_index=False)
+                     .agg(BetSlips=("BetSlips", "sum"), PaidIn=("PaidIn", "sum"),
+                          PaidOut=("PaidOut", "sum"), NetWin=("NetWin", "sum"),
+                          GWMargin=("GWMargin", "mean")))
+    # game frame: per game (sum across cashiers)
+    game_df = (detail.groupby(["Year", "Month", "MonthNum", "Shop", "Game"], as_index=False)
+                     .agg(BetSlips=("BetSlips", "sum"), PaidIn=("PaidIn", "sum"),
+                          PaidOut=("PaidOut", "sum"), GrossWin=("GrossWin", "sum")))
+    game_df["PaidOutCount"] = 0
+    return slip_df, game_df
+
+
 # --- PRECISION HELPER FUNCTIONS ---
 def clean_currency_string(val):
     if pd.isna(val) or val == '' or val == 'nan' or val == 'NaN':
@@ -1327,6 +1412,7 @@ if df_parts:
         # committed there appear in the comparison without re-uploading. Neon wins on
         # any (Year, Month, Shop) overlap to avoid double-counting.
         folder_slip, folder_game = load_comparison_detail_from_folder()
+        hist_slip, hist_game = load_comparison_detail_from_historical()
 
         def _merge_detail(neon_df, folder_df, keys):
             if folder_df is None or folder_df.empty:
@@ -1339,6 +1425,8 @@ if df_parts:
 
         slip_full = _merge_detail(slip_full, folder_slip, ["Year", "Month", "Shop"])
         game_full = _merge_detail(game_full, folder_game, ["Year", "Month", "Shop"])
+        slip_full = _merge_detail(slip_full, hist_slip, ["Year", "Month", "Shop"])
+        game_full = _merge_detail(game_full, hist_game, ["Year", "Month", "Shop"])
 
         if slip_full.empty and game_full.empty:
             st.info("💡 Upload a Slip Summary and/or Cash Operations CSV to build the quarterly comparison. "
