@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 import glob
 from sqlalchemy import create_engine, text
+import comparison as cmp
+from comparison_excel import build_comparison_workbook
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Playbet Performance", layout="wide")
@@ -82,6 +84,30 @@ if DATABASE_URL:
                     content_hash VARCHAR(64) PRIMARY KEY,
                     source_file VARCHAR(300),
                     uploaded_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            # Full slip-summary rows (per cashier) — kept, NOT collapsed — so the
+            # comparison section can do betslip/cashier head-to-head and GWM%.
+            _c.execute(text("""
+                CREATE TABLE IF NOT EXISTS dashboard_slip_rows (
+                    id SERIAL PRIMARY KEY,
+                    source_file VARCHAR(300),
+                    shop VARCHAR(120), cashier VARCHAR(200),
+                    bet_slips INTEGER, paid_in NUMERIC, paid_out NUMERIC,
+                    gw_margin NUMERIC, net_win NUMERIC,
+                    year VARCHAR(8), month VARCHAR(20), monthnum INTEGER
+                )
+            """))
+            # Per game-per-shop rows from the Cash Operations export — kept so
+            # the comparison can do game betslip counts and per-game GWM%.
+            _c.execute(text("""
+                CREATE TABLE IF NOT EXISTS dashboard_game_rows (
+                    id SERIAL PRIMARY KEY,
+                    source_file VARCHAR(300),
+                    shop VARCHAR(120), game VARCHAR(200),
+                    paid_in_count INTEGER, paid_in_sum NUMERIC,
+                    paid_out_count INTEGER, paid_out_sum NUMERIC, gross_win NUMERIC,
+                    year VARCHAR(8), month VARCHAR(20), monthnum INTEGER
                 )
             """))
             # (No month/year cleanup — all data is retained.)
@@ -222,6 +248,202 @@ def load_uploaded_rows_from_neon():
         } for r in rows])
     except Exception:
         return pd.DataFrame(columns=TARGET_COLS)
+
+
+# =====================================================================
+# FULL-DETAIL INGESTION FOR THE COMPARISON SECTION
+# Slip Summary -> per-cashier rows (betslips, paid in/out, GW margin, net win)
+# Cash Operations -> per game-per-shop rows (paid-in count = betslip proxy, gross win)
+# Both keep every row, tagged with Year/Month from the filename.
+# =====================================================================
+def _col(df, *names):
+    for n in names:
+        for c in df.columns:
+            if str(c).lower().strip() == n:
+                return c
+    return None
+
+
+def is_cash_ops_csv(df):
+    """Cash Operations export: has Cashier + Shop + Game + Paid In Count + Gross Win."""
+    cols = [str(c).lower().strip() for c in df.columns]
+    return ('cashier' in cols and 'shop' in cols and 'game' in cols
+            and 'paid in count' in cols and 'gross win' in cols)
+
+
+def save_slip_rows_to_neon(df, file_date, source_file):
+    """Store every cashier row from a Slip Summary CSV. Returns 'saved'|'duplicate'|'error'."""
+    if _engine is None or df is None or df.empty:
+        return "error"
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    shop_c = _col(df, 'shop')
+    user_c = _col(df, 'user')
+    slips_c = _col(df, 'bet slips', 'betslips')
+    pin_c = _col(df, 'paid in', 'paidin', 'paid in sum')
+    pout_c = _col(df, 'paid out', 'paid out sum')
+    gw_c = _col(df, 'gw margin %', 'gw margin')
+    nw_c = _col(df, 'net win')
+    if not (shop_c and user_c and slips_c):
+        return "error"
+
+    year = str(file_date.year)
+    month = file_date.strftime('%B')
+    monthnum = file_date.month
+
+    rows = []
+    for _, r in df.iterrows():
+        shop = str(r[shop_c]).strip().replace('Potch', 'Potchefstroom')
+        if shop not in BRANCHES:
+            continue
+        rows.append({
+            "shop": shop, "cashier": str(r[user_c]).strip(),
+            "slips": int(clean_currency_string(r[slips_c])),
+            "pin": clean_currency_string(r[pin_c]) if pin_c else 0.0,
+            "pout": clean_currency_string(r[pout_c]) if pout_c else 0.0,
+            "gw": clean_currency_string(r[gw_c]) if gw_c else 0.0,
+            "nw": clean_currency_string(r[nw_c]) if nw_c else 0.0,
+        })
+    if not rows:
+        return "error"
+
+    # content fingerprint for dedup
+    sig = hashlib.md5(("SLIP|" + year + month + "|" + "|".join(
+        sorted(f"{x['shop']}:{x['cashier']}:{x['slips']}" for x in rows)
+    )).encode()).hexdigest()
+
+    try:
+        with _engine.begin() as c:
+            exists = c.execute(text(
+                "SELECT 1 FROM dashboard_upload_hashes WHERE content_hash = :h"), {"h": sig}).fetchone()
+            if exists:
+                return "duplicate"
+            c.execute(text("DELETE FROM dashboard_slip_rows WHERE year=:y AND month=:m"),
+                      {"y": year, "m": month})
+            for x in rows:
+                c.execute(text("""
+                    INSERT INTO dashboard_slip_rows
+                      (source_file, shop, cashier, bet_slips, paid_in, paid_out,
+                       gw_margin, net_win, year, month, monthnum)
+                    VALUES (:f,:shop,:cash,:slips,:pin,:pout,:gw,:nw,:y,:m,:mn)
+                """), {"f": source_file, "shop": x["shop"], "cash": x["cashier"],
+                       "slips": x["slips"], "pin": x["pin"], "pout": x["pout"],
+                       "gw": x["gw"], "nw": x["nw"], "y": year, "m": month, "mn": monthnum})
+            c.execute(text("""INSERT INTO dashboard_upload_hashes (content_hash, source_file)
+                              VALUES (:h,:f) ON CONFLICT (content_hash) DO NOTHING"""),
+                      {"h": sig, "f": source_file})
+        return "saved"
+    except Exception as e:
+        st.sidebar.warning(f"Could not save slip rows: {e}")
+        return "error"
+
+
+def save_game_rows_to_neon(df, file_date, source_file):
+    """Store every game/shop row from a Cash Operations CSV. Returns 'saved'|'duplicate'|'error'."""
+    if _engine is None or df is None or df.empty:
+        return "error"
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    shop_c = _col(df, 'shop')
+    game_c = _col(df, 'game')
+    pinc_c = _col(df, 'paid in count')
+    pins_c = _col(df, 'paid in sum')
+    poutc_c = _col(df, 'paid out - count', 'paid out count')
+    pouts_c = _col(df, 'paid out sum')
+    gw_c = _col(df, 'gross win')
+    if not (shop_c and game_c and pinc_c and gw_c):
+        return "error"
+
+    year = str(file_date.year)
+    month = file_date.strftime('%B')
+    monthnum = file_date.month
+
+    rows = []
+    for _, r in df.iterrows():
+        shop = str(r[shop_c]).strip().replace('Potch', 'Potchefstroom')
+        if shop not in BRANCHES:
+            continue
+        rows.append({
+            "shop": shop, "game": clean_game_name(r[game_c]),
+            "pinc": int(clean_currency_string(r[pinc_c])),
+            "pins": clean_currency_string(r[pins_c]) if pins_c else 0.0,
+            "poutc": int(clean_currency_string(r[poutc_c])) if poutc_c else 0,
+            "pouts": clean_currency_string(r[pouts_c]) if pouts_c else 0.0,
+            "gw": clean_currency_string(r[gw_c]),
+        })
+    if not rows:
+        return "error"
+
+    sig = hashlib.md5(("GAME|" + year + month + "|" + "|".join(
+        sorted(f"{x['shop']}:{x['game']}:{x['pinc']}" for x in rows)
+    )).encode()).hexdigest()
+
+    try:
+        with _engine.begin() as c:
+            exists = c.execute(text(
+                "SELECT 1 FROM dashboard_upload_hashes WHERE content_hash = :h"), {"h": sig}).fetchone()
+            if exists:
+                return "duplicate"
+            c.execute(text("DELETE FROM dashboard_game_rows WHERE year=:y AND month=:m"),
+                      {"y": year, "m": month})
+            for x in rows:
+                c.execute(text("""
+                    INSERT INTO dashboard_game_rows
+                      (source_file, shop, game, paid_in_count, paid_in_sum,
+                       paid_out_count, paid_out_sum, gross_win, year, month, monthnum)
+                    VALUES (:f,:shop,:game,:pinc,:pins,:poutc,:pouts,:gw,:y,:m,:mn)
+                """), {"f": source_file, "shop": x["shop"], "game": x["game"],
+                       "pinc": x["pinc"], "pins": x["pins"], "poutc": x["poutc"],
+                       "pouts": x["pouts"], "gw": x["gw"], "y": year, "m": month, "mn": monthnum})
+            c.execute(text("""INSERT INTO dashboard_upload_hashes (content_hash, source_file)
+                              VALUES (:h,:f) ON CONFLICT (content_hash) DO NOTHING"""),
+                      {"h": sig, "f": source_file})
+        return "saved"
+    except Exception as e:
+        st.sidebar.warning(f"Could not save game rows: {e}")
+        return "error"
+
+
+def load_slip_rows_from_neon():
+    if _engine is None:
+        return pd.DataFrame()
+    try:
+        with _engine.connect() as c:
+            rows = c.execute(text("""
+                SELECT shop, cashier, bet_slips, paid_in, paid_out, gw_margin,
+                       net_win, year, month, monthnum FROM dashboard_slip_rows
+            """)).fetchall()
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame([{
+            'Shop': r[0], 'Cashier': r[1], 'BetSlips': int(r[2] or 0),
+            'PaidIn': float(r[3] or 0), 'PaidOut': float(r[4] or 0),
+            'GWMargin': float(r[5] or 0), 'NetWin': float(r[6] or 0),
+            'Year': r[7], 'Month': r[8], 'MonthNum': int(r[9] or 0)
+        } for r in rows])
+    except Exception:
+        return pd.DataFrame()
+
+
+def load_game_rows_from_neon():
+    if _engine is None:
+        return pd.DataFrame()
+    try:
+        with _engine.connect() as c:
+            rows = c.execute(text("""
+                SELECT shop, game, paid_in_count, paid_in_sum, paid_out_count,
+                       paid_out_sum, gross_win, year, month, monthnum FROM dashboard_game_rows
+            """)).fetchall()
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame([{
+            'Shop': r[0], 'Game': r[1], 'BetSlips': int(r[2] or 0),
+            'PaidIn': float(r[3] or 0), 'PaidOutCount': int(r[4] or 0),
+            'PaidOut': float(r[5] or 0), 'GrossWin': float(r[6] or 0),
+            'Year': r[7], 'Month': r[8], 'MonthNum': int(r[9] or 0)
+        } for r in rows])
+    except Exception:
+        return pd.DataFrame()
 
 
 # --- PRECISION HELPER FUNCTIONS ---
@@ -685,57 +907,53 @@ def ensure_numeric(df, columns):
     return df
 
 
-# --- ADAPTIVE ANALYTICS ENGINE ---
-def generate_strategic_analysis(branch_name, yoy, total_ggr, total_deposits, top_game):
-    display_name = "the overall network" if branch_name == "All Branches Dashboard" else f"the {branch_name} branch"
-    insights = [f"### 📊 Tailored Action Plan: {branch_name}"]
-    if yoy > 20:
-        insights.append(f"**🚀 Hyper-Growth Mode ({yoy:+.1f}%):** {display_name} is experiencing exceptional momentum. \n* **Action:** Shift strategy from acquisition to maximizing Lifetime Value (LTV). Consider launching VIP reward tiers to lock in the high-rollers driving this surge.")
-    elif 0 <= yoy <= 20:
-        insights.append(f"**📈 Steady Expansion ({yoy:+.1f}%):** {display_name} is showing healthy, sustainable growth. \n* **Action:** Focus on cross-selling. Push localized promotions to convert casual players into daily visitors to bump up the average handle.")
-    elif -15 < yoy < 0:
-        insights.append(f"**⚠️ Early Warning ({yoy:+.1f}%):** Revenue has cooled slightly. \n* **Action:** Deploy immediate reactivation campaigns targeting lapsed players in this specific area.")
-    else:
-        insights.append(f"**🚨 Critical Decline ({yoy:+.1f}%):** {display_name} requires immediate intervention. \n* **Action:** Conduct a strict operational audit. Assess local competitor promotions, review branch overheads, and consider aggressive grassroots marketing to rebuild foot traffic.")
-    insights.append(f"**🎯 Product Optimization:** With **'{top_game}'** dominating the revenue share, ensure terminal availability and uptime for this game is at 100% during peak hours.")
-    insights.append(f"**💰 Deposits Performance:** Total deposits of R {total_deposits:,.2f} indicate {'strong' if total_deposits > 1000000 else 'moderate'} player activity.")
-    return "\n\n".join(insights)
-
-
 # --- APP LAYOUT ---
 st.title("Playbet Dashboard")
 
-if 'manual_2026_data' not in st.session_state:
-    # Load persisted manual entries from Neon so they survive restarts
-    st.session_state.manual_2026_data = load_manual_entries_from_neon()
-
-st.sidebar.header("📤 Upload New CSV")
+st.sidebar.header("📤 Upload CSVs")
 uploaded_files = st.sidebar.file_uploader(
-    "Upload CSV files",
+    "Slip Summary and/or Cash Operations exports",
     accept_multiple_files=True,
     type=["csv"],
-    help="Upload CSV files to add to the dashboard. Saved to the database permanently."
+    help="Upload Slip Summary and Cash Operations CSVs. Saved to the database permanently."
 )
-st.sidebar.info("💡 Ensure CSV filenames include the month and year (e.g., 'May 2026.csv').")
+st.sidebar.info("💡 Filenames must include month and year (e.g., 'May 2026.csv').")
 
-# Save uploaded files: parse and persist rows to Neon, blocking duplicates
+# Save uploaded files: parse and persist to Neon.
+# Each file feeds up to three stores:
+#   • the existing GGR/Deposits summary (dashboard_uploaded_rows)
+#   • full per-cashier slip detail (dashboard_slip_rows)      [Slip Summary files]
+#   • full per-game detail          (dashboard_game_rows)     [Cash Operations files]
 if uploaded_files:
     if _engine is None:
         st.sidebar.error("❌ No database connection — upload won't persist.")
     saved_files, dup_files = [], []
     for file in uploaded_files:
         try:
+            file_date = extract_date_from_filename(file.name.lower())
+            raw = pd.read_csv(file)
+            raw.columns = [str(c).strip() for c in raw.columns]
+
+            outcomes = []
+
+            # Full detail for the comparison section
+            if file_date is not None:
+                if is_cash_ops_csv(raw):
+                    outcomes.append(save_game_rows_to_neon(raw, file_date, file.name))
+                elif is_per_user_csv(raw):
+                    outcomes.append(save_slip_rows_to_neon(raw, file_date, file.name))
+
+            # Existing summary path (GGR/Deposits) — keeps the main dashboard working
             parsed = load_data([file])
-            if parsed is None or parsed.empty:
+            if parsed is not None and not parsed.empty:
+                outcomes.append(save_uploaded_rows_to_neon(parsed, file.name))
+
+            if not outcomes:
                 st.sidebar.warning(f"⚠️ {file.name}: parsed to 0 rows (check headers / filename month-year).")
-                continue
-            result = save_uploaded_rows_to_neon(parsed, file.name)
-            if result == "saved":
+            elif "saved" in outcomes:
                 saved_files.append(file.name)
-            elif result == "duplicate":
+            elif all(o == "duplicate" for o in outcomes):
                 dup_files.append(file.name)
-            elif result == "error":
-                st.sidebar.warning(f"⚠️ {file.name}: nothing saved (blocked month or DB issue).")
         except Exception as e:
             st.sidebar.warning(f"Could not process {file.name}: {e}")
     if dup_files:
@@ -744,37 +962,6 @@ if uploaded_files:
         st.sidebar.success(f"✅ Saved {len(saved_files)} file(s) to database")
         st.cache_data.clear()
         st.rerun()
-
-st.sidebar.divider()
-
-# --- SIDEBAR: MANUAL ENTRY ---
-st.sidebar.header("📥 Enter Manual Actuals")
-entry_shop = st.sidebar.selectbox("Select Branch:", BRANCHES)
-# Blocked months are not selectable for manual entry either
-entry_month = st.sidebar.selectbox("Select Month:", month_order)
-entry_game = st.sidebar.text_input("Enter Game Name:", value="Lucky #1")
-entry_deposits = st.sidebar.number_input("Enter Deposits Amount (R):", min_value=0.0, format="%.2f")
-entry_ggr = st.sidebar.number_input("Enter GGR Amount (R):", min_value=0.0, format="%.2f")
-
-if st.sidebar.button("Append to Ledger"):
-    month_num = month_order.index(entry_month) + 1
-    new_row = pd.DataFrame([{
-        'Shop': entry_shop, 'Game': entry_game,
-        'Deposits': entry_deposits, 'Paid Out Sum': 0.0,
-        'GGR': entry_ggr, 'GW Margin %': 0.0, 'Net Win': 0.0, 'Net Win Margin': 0.0,
-        'Year': '2026', 'Month': entry_month, 'MonthNum': month_num
-    }])
-    st.session_state.manual_2026_data = pd.concat([st.session_state.manual_2026_data, new_row], ignore_index=True)
-    saved = save_manual_entry_to_neon(entry_shop, entry_game, entry_deposits, entry_ggr, '2026', entry_month, month_num)
-    if saved:
-        st.sidebar.success(f"Saved R {entry_ggr:,.2f} GGR and R {entry_deposits:,.2f} Deposits for {entry_month} to database!")
-    else:
-        st.sidebar.success(f"Added R {entry_ggr:,.2f} GGR and R {entry_deposits:,.2f} Deposits for {entry_month} (session only)!")
-
-if st.sidebar.button("Reset Ledger"):
-    st.session_state.manual_2026_data = pd.DataFrame(columns=TARGET_COLS)
-    clear_manual_entries_neon()
-    st.rerun()
 
 # --- SIDEBAR: FILTERS ---
 st.sidebar.divider()
@@ -814,8 +1001,6 @@ if not historical_df.empty:
     df_parts.append(historical_df)
 if not uploaded_df.empty:
     df_parts.append(uploaded_df)
-if not st.session_state.manual_2026_data.empty:
-    df_parts.append(st.session_state.manual_2026_data)
 
 if df_parts:
     df = pd.concat(df_parts, ignore_index=True)
@@ -969,40 +1154,100 @@ if df_parts:
                     st.warning(f"No month-to-month data available for '{selected_game}'.")
         st.divider()
 
-        # --- YEAR-OVER-YEAR GAME PERFORMANCE MATRIX ---
-        st.subheader("Year-Over-Year Game Performance Matrix")
-        matrix_df = df_filtered.pivot_table(index='Game', columns='Year', values='GGR', aggfunc='sum').fillna(0)
-        if len(matrix_df.columns) >= 2:
-            year_cols_matrix = sorted(matrix_df.columns, key=lambda y: int(y))
-            matrix_df = matrix_df[year_cols_matrix]
-            latest_year = year_cols_matrix[-1]
-            variance_cols = []
-            growth_cols = []
-            for prev_y, curr_y in zip(year_cols_matrix[:-1], year_cols_matrix[1:]):
-                var_col = f"Variance {curr_y} vs {prev_y}"
-                growth_col = f"Growth % {curr_y} vs {prev_y}"
-                matrix_df[var_col] = matrix_df[curr_y] - matrix_df[prev_y]
-                matrix_df[growth_col] = (matrix_df[var_col] / matrix_df[prev_y].replace(0, 1)) * 100
-                variance_cols.append(var_col)
-                growth_cols.append(growth_col)
-            matrix_df = matrix_df.sort_values(by=latest_year, ascending=False)
+        # =============================================================
+        # QUARTERLY COMPARISON — games & cashiers (betslips, GWM%, best/worst month)
+        # Runs on the full-detail slip/game rows kept in Neon, scoped to a
+        # year + quarter the user picks, honouring the branch selected above.
+        # =============================================================
+        st.header("📈 Quarterly Comparison")
 
-            def color_variance(val):
-                if pd.isna(val):
-                    return ''
-                color = '#27ae60' if val > 0 else '#c0392b' if val < 0 else 'gray'
-                return f'color: {color}; font-weight: bold;'
+        slip_full = load_slip_rows_from_neon()
+        game_full = load_game_rows_from_neon()
 
-            format_map = {year_col: "R {:,.2f}" for year_col in year_cols_matrix}
-            for var_col in variance_cols:
-                format_map[var_col] = "R {:,.2f}"
-            for growth_col in growth_cols:
-                format_map[growth_col] = "{:,.1f}%"
-            styled_matrix = matrix_df.style.format(format_map).map(color_variance, subset=variance_cols + growth_cols)
-            st.dataframe(styled_matrix, use_container_width=True)
+        if slip_full.empty and game_full.empty:
+            st.info("💡 Upload a Slip Summary and/or Cash Operations CSV to build the quarterly comparison. "
+                    "These carry per-cashier and per-game betslip detail the comparison needs.")
         else:
-            st.info("💡 To view the Year-Over-Year Conditional Matrix, please ensure 'All Time' or multiple years of data are available in your filter.")
+            # choose the year + quarter to analyse
+            comp_years = sorted(set(
+                (list(slip_full['Year'].astype(str)) if not slip_full.empty else []) +
+                (list(game_full['Year'].astype(str)) if not game_full.empty else [])
+            ))
+            cc1, cc2 = st.columns(2)
+            comp_year = cc1.selectbox("Comparison Year:", comp_years, index=len(comp_years) - 1)
+            comp_quarter = cc2.selectbox("Comparison Quarter:", list(cmp.QUARTERS.keys()), index=0)
 
-        st.divider()
-        st.subheader("📊 Strategic Action Plan")
-        st.markdown(generate_strategic_analysis(selected_view, yoy, total_ggr, total_deposits, top_game))
+            comp_branch = None if selected_view == "All Branches Dashboard" else selected_view
+
+            slip_s = cmp.scope(slip_full, comp_year, comp_quarter, comp_branch)
+            game_s = cmp.scope(game_full, comp_year, comp_quarter, comp_branch)
+
+            # drop games that existed in 2024 but not in the latest year — comparison only
+            game_s = cmp.drop_discontinued_games(game_s, comp_year)
+
+            scope_label = f"{comp_year} {comp_quarter}" + (f" · {comp_branch}" if comp_branch else " · All Branches")
+            st.caption(f"Showing: **{scope_label}**")
+
+            if (slip_s is None or slip_s.empty) and (game_s is None or game_s.empty):
+                st.warning("No comparison data for this year/quarter/branch selection.")
+            else:
+                comp_tables = {
+                    "Best-Worst Month":        cmp.best_worst_month(slip_s, game_s, comp_quarter),
+                    "Games Betslips by Month": cmp.games_betslip_h2h(game_s, comp_quarter),
+                    "Games Increase-Decrease": cmp.games_increase_decrease(game_s, comp_quarter),
+                    "Games per Branch":        cmp.games_per_branch(game_s),
+                    "Games GWM":               cmp.games_gwm(game_s, comp_quarter),
+                    "Cashier Betslips by Month": cmp.cashier_betslip_h2h(slip_s, comp_quarter),
+                    "Cashier GWM":             cmp.cashier_gwm(slip_s, comp_quarter),
+                }
+
+                # --- Best/worst month ---
+                st.subheader("Busiest & least-busy month · best & worst value")
+                bw = comp_tables["Best-Worst Month"]
+                if not bw.empty:
+                    st.dataframe(bw, use_container_width=True, hide_index=True)
+                    if "Betslips" in bw.columns:
+                        fig_bw = px.bar(bw, x="Month", y="Betslips", color="Month",
+                                        template="plotly_white")
+                        fig_bw.update_layout(showlegend=False, yaxis_tickformat=",.0f")
+                        st.plotly_chart(fig_bw, use_container_width=True)
+
+                # --- Games ---
+                st.subheader("Games — betslip count by month (side by side)")
+                st.dataframe(comp_tables["Games Betslips by Month"], use_container_width=True, hide_index=True)
+
+                st.subheader("Games — betslip increases & decreases (first → last month)")
+                gid = comp_tables["Games Increase-Decrease"]
+                st.dataframe(gid, use_container_width=True, hide_index=True)
+                if not gid.empty and "Change" in gid.columns:
+                    fig_gid = px.bar(gid, x="Game", y="Change", color="Trend",
+                                     template="plotly_white",
+                                     color_discrete_map={"increase": "#27ae60", "decrease": "#c0392b", "flat": "#95a5a6"})
+                    fig_gid.update_layout(yaxis_tickformat=",.0f")
+                    st.plotly_chart(fig_gid, use_container_width=True)
+
+                st.subheader("Games per branch")
+                st.dataframe(comp_tables["Games per Branch"], use_container_width=True, hide_index=True)
+
+                st.subheader("Games — GWM% over the quarter")
+                st.caption("GWM% = Gross Win ÷ Paid In")
+                st.dataframe(comp_tables["Games GWM"], use_container_width=True, hide_index=True)
+
+                # --- Cashiers ---
+                st.subheader("Cashiers — betslip count by month (side by side)")
+                st.dataframe(comp_tables["Cashier Betslips by Month"], use_container_width=True, hide_index=True)
+
+                st.subheader("Cashiers — GWM% over the quarter")
+                st.caption("Per-month from the slip file's GW Margin %; quarter column is paid-in weighted.")
+                st.dataframe(comp_tables["Cashier GWM"], use_container_width=True, hide_index=True)
+
+                # --- Excel download ---
+                st.divider()
+                xlsx_bytes = build_comparison_workbook(comp_tables, scope_label)
+                safe = scope_label.replace(" ", "_").replace("·", "-").replace("/", "-")
+                st.download_button(
+                    "⬇️ Download comparison (Excel, data + charts)",
+                    data=xlsx_bytes,
+                    file_name=f"Playbet_Comparison_{safe}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
