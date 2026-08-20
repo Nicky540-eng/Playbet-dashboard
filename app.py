@@ -280,6 +280,14 @@ def is_cash_ops_csv(df):
             and 'paid in count' in cols and 'gross win' in cols)
 
 
+def is_raw_betslip_csv(df):
+    """Raw per-slip transaction dump (one row per betslip): 'Slip #' + 'Paid In Date'
+    + 'Pay-in Shop'. These are huge (100k-300k rows) and must NOT be parsed by the
+    folder loaders — they'd exhaust memory and hang the app. They are not a summary."""
+    cols = [str(c).lower().strip() for c in df.columns]
+    return ('slip #' in cols and 'pay-in shop' in cols and 'paid in date' in cols)
+
+
 def save_slip_rows_to_neon(df, file_date, source_file):
     """Store every cashier row from a Slip Summary CSV. Returns 'saved'|'duplicate'|'error'."""
     if _engine is None or df is None or df.empty:
@@ -466,6 +474,11 @@ def load_comparison_detail_from_folder():
             filename = os.path.basename(file_path)
             file_date = extract_date_from_filename(filename)
             if file_date is None:
+                continue
+            # Peek at the header only — skip giant raw per-slip dumps before loading them.
+            head = pd.read_csv(file_path, nrows=0)
+            head.columns = [str(c).strip() for c in head.columns]
+            if is_raw_betslip_csv(head):
                 continue
             df = pd.read_csv(file_path)
             df.columns = [str(c).strip() for c in df.columns]
@@ -996,6 +1009,11 @@ def load_uploaded_csvs_from_folder():
             filename = os.path.basename(file_path)
             file_date = extract_date_from_filename(filename)
             if file_date is None:
+                continue
+            # Peek at header only — skip giant raw per-slip dumps before loading them.
+            head = pd.read_csv(file_path, nrows=0)
+            head.columns = [str(c).strip() for c in head.columns]
+            if is_raw_betslip_csv(head):
                 continue
             df = pd.read_csv(file_path)
             df.columns = [str(c).strip() for c in df.columns]
