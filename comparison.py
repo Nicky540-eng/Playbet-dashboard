@@ -67,11 +67,11 @@ def games_increase_decrease(game_df, quarter_label):
     res = pd.DataFrame(index=piv.index)
     for m in months:
         res[MONTHS[m - 1]] = piv[m].astype(int)
-    res["Change"] = (piv[last] - piv[first]).astype(int)
-    res["Change %"] = ((piv[last] - piv[first]) / piv[first].replace(0, float("nan")) * 100).round(1)
-    res["Trend"] = res["Change"].apply(lambda x: "increase" if x > 0 else ("decrease" if x < 0 else "flat"))
+    res["Change in Betslips"] = (piv[last] - piv[first]).astype(int)
+    res["Change (%)"] = ((piv[last] - piv[first]) / piv[first].replace(0, float("nan")) * 100).round(1)
+    res["Trend"] = res["Change in Betslips"].apply(lambda x: "increase" if x > 0 else ("decrease" if x < 0 else "flat"))
     res.index.name = "Game"
-    return res.sort_values("Change", ascending=False).reset_index()
+    return res.sort_values("Change in Betslips", ascending=False).reset_index()
 
 
 def games_per_branch(game_df):
@@ -83,7 +83,7 @@ def games_per_branch(game_df):
                        PaidIn=("PaidIn", "sum"),
                        GrossWin=("GrossWin", "sum"))
                   .reset_index().rename(columns={"Shop": "Branch"}))
-    out["GWM %"] = (out["GrossWin"] / out["PaidIn"].replace(0, float("nan")) * 100).round(2)
+    out["Gross Win Margin %"] = (out["GrossWin"] / out["PaidIn"].replace(0, float("nan")) * 100).round(2)
     return out.sort_values(["Branch", "BetSlips"], ascending=[True, False])
 
 
@@ -96,9 +96,9 @@ def games_gwm(game_df, quarter_label):
                 .agg(gw=("GrossWin", "sum"), pi=("PaidIn", "sum")).reset_index())
     g["gwm"] = (g["gw"] / g["pi"].replace(0, float("nan")) * 100).round(2)
     piv = g.pivot(index="Game", columns="MonthNum", values="gwm").reindex(columns=months)
-    piv.columns = [f"GWM% {MONTHS[m - 1]}" for m in months]
+    piv.columns = [f"Gross Win Margin % {MONTHS[m - 1]}" for m in months]
     comb = game_df.groupby("Game").agg(gw=("GrossWin", "sum"), pi=("PaidIn", "sum"))
-    piv["GWM% Quarter"] = (comb["gw"] / comb["pi"].replace(0, float("nan")) * 100).round(2)
+    piv["Gross Win Margin % (Quarter)"] = (comb["gw"] / comb["pi"].replace(0, float("nan")) * 100).round(2)
     piv.index.name = "Game"
     return piv.reset_index()
 
@@ -128,10 +128,10 @@ def cashier_gwm(slip_df, quarter_label):
     months = QUARTERS[quarter_label]
     piv = (slip_df.pivot_table(index=["Cashier", "Shop"], columns="MonthNum",
                                values="GWMargin", aggfunc="mean").reindex(columns=months))
-    piv.columns = [f"GWM% {MONTHS[m - 1]}" for m in months]
+    piv.columns = [f"Gross Win Margin % {MONTHS[m - 1]}" for m in months]
     comb = slip_df.groupby(["Cashier", "Shop"]).agg(pi=("PaidIn", "sum"), po=("PaidOut", "sum"))
-    comb["GWM% Quarter"] = ((comb["pi"] + comb["po"]) / comb["pi"].replace(0, float("nan")) * 100).round(2)
-    out = piv.join(comb["GWM% Quarter"]).reset_index().rename(columns={"Shop": "Branch"})
+    comb["Gross Win Margin % (Quarter)"] = ((comb["pi"] + comb["po"]) / comb["pi"].replace(0, float("nan")) * 100).round(2)
+    out = piv.join(comb["Gross Win Margin % (Quarter)"]).reset_index().rename(columns={"Shop": "Branch"})
     return out
 
 
