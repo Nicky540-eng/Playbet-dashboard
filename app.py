@@ -16,6 +16,11 @@ from comparison_excel import build_comparison_workbook
 st.set_page_config(page_title="Playbet Performance", layout="wide")
 warnings.filterwarnings('ignore')
 
+# Startup checkpoint — proves the app booted past imports. If the screen stays
+# blank/spinning, the hang is in imports; if you see this, the hang is later.
+_boot = st.empty()
+_boot.info("Starting up…")
+
 BRANCHES = ["Malvern", "Potchefstroom", "Pretoria", "White River", "Randburg"]
 month_order = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
@@ -121,6 +126,8 @@ if DATABASE_URL:
             # (No month/year cleanup — all data is retained.)
     except Exception as e:
         st.sidebar.warning(f"DB connection issue: {e}")
+
+_boot.info("Database ready — loading data…")
 
 
 def load_manual_entries_from_neon():
@@ -498,14 +505,38 @@ def load_comparison_detail_from_folder():
                 sub = sub[sub['Shop'].isin(BRANCHES)]
                 if sub.empty:
                     continue
+                betslip_col = _col(sub, 'paid in count')
+                paidin_col = _col(sub, 'paid in sum')
+                paidout_col = _col(sub, 'paid out sum')
+                grosswin_col = _col(sub, 'gross win')
+                cashier_col = _col(sub, 'cashier')
+
+                sub['_betslips'] = sub[betslip_col].apply(clean_currency_string)
+                sub['_paidin'] = sub[paidin_col].apply(clean_currency_string) if paidin_col else 0.0
+                sub['_paidout'] = sub[paidout_col].apply(clean_currency_string) if paidout_col else 0.0
+                sub['_grosswin'] = sub[grosswin_col].apply(clean_currency_string)
+
+                # Game detail: one row per game (summed across cashiers)
                 game_parts.append(pd.DataFrame({
                     'Shop': sub['Shop'], 'Game': sub[_col(sub, 'game')].apply(clean_game_name),
-                    'BetSlips': sub[_col(sub, 'paid in count')].apply(clean_currency_string).astype(int),
-                    'PaidIn': sub[_col(sub, 'paid in sum')].apply(clean_currency_string),
-                    'PaidOutCount': 0,
-                    'PaidOut': sub[_col(sub, 'paid out sum')].apply(clean_currency_string) if _col(sub, 'paid out sum') else 0.0,
-                    'GrossWin': sub[_col(sub, 'gross win')].apply(clean_currency_string),
+                    'BetSlips': sub['_betslips'].astype(int),
+                    'PaidIn': sub['_paidin'], 'PaidOutCount': 0,
+                    'PaidOut': sub['_paidout'], 'GrossWin': sub['_grosswin'],
                     'Year': year, 'Month': month, 'MonthNum': mn}))
+
+                # Cashier detail: derived from the same file (summed across games per cashier),
+                # so a single Cash Operations file fills BOTH the games and cashiers sections.
+                if cashier_col:
+                    cg = sub.groupby([cashier_col, 'Shop'], as_index=False).agg(
+                        BetSlips=('_betslips', 'sum'), PaidIn=('_paidin', 'sum'),
+                        PaidOut=('_paidout', 'sum'), GrossWin=('_grosswin', 'sum'))
+                    cg['GWMargin'] = (cg['GrossWin'] / cg['PaidIn'].replace(0, float('nan')) * 100).round(2).fillna(0.0)
+                    slip_parts.append(pd.DataFrame({
+                        'Shop': cg['Shop'], 'Cashier': cg[cashier_col].astype(str).str.strip(),
+                        'BetSlips': cg['BetSlips'].astype(int),
+                        'PaidIn': cg['PaidIn'], 'PaidOut': cg['PaidOut'],
+                        'GWMargin': cg['GWMargin'], 'NetWin': cg['GrossWin'],
+                        'Year': year, 'Month': month, 'MonthNum': mn}))
             elif is_per_user_csv(df):
                 sub = df.copy()
                 sub['Shop'] = sub[_col(sub, 'shop')].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
@@ -544,7 +575,8 @@ def load_comparison_detail_from_historical():
     def _yr(d):
         if hasattr(d, "year"):
             return d.year
-        m = re.search(r"/(\d{2})\b", str(d))
+        # dates are DD/MM/YY — the YEAR is the LAST two digits, not the first.
+        m = re.match(r"\s*\d{1,2}/\d{1,2}/(\d{2})\b", str(d))
         return 2000 + int(m.group(1)) if m else None
 
     def _month_from_sheet(name):
@@ -1117,6 +1149,7 @@ def ensure_numeric(df, columns):
 
 # --- APP LAYOUT ---
 st.title("Playbet Dashboard")
+_boot.empty()
 
 st.sidebar.header("📤 Upload Data")
 st.sidebar.caption("Two separate uploaders — put each file in its own box.")
@@ -1472,8 +1505,17 @@ if df_parts:
             slip_s = cmp.scope(slip_full, comp_year, comp_quarter, comp_branch)
             game_s = cmp.scope(game_full, comp_year, comp_quarter, comp_branch)
 
-            # drop games that existed in 2024 but not in the latest year — comparison only
-            game_s = cmp.drop_discontinued_games(game_s, comp_year)
+            # Remove games present in 2024 but gone by 2026 — computed from the FULL
+            # dataset (both years), then applied to the scoped frame. Scoping alone
+            # only holds one year, so the drop must reference game_full.
+            if not game_full.empty:
+                years_all = set(game_full["Year"].astype(str))
+                if "2024" in years_all and "2026" in years_all:
+                    g2024 = set(game_full[game_full["Year"].astype(str) == "2024"]["Game"])
+                    g2026 = set(game_full[game_full["Year"].astype(str) == "2026"]["Game"])
+                    discontinued = g2024 - g2026
+                    if discontinued and game_s is not None and not game_s.empty:
+                        game_s = game_s[~game_s["Game"].isin(discontinued)].copy()
 
             scope_label = f"{comp_year} {comp_quarter}" + (f" · {comp_branch}" if comp_branch else " · All Branches")
             st.caption(f"Showing: **{scope_label}**")
@@ -1499,10 +1541,13 @@ if df_parts:
                         st.caption(caption)
                     st.dataframe(df, use_container_width=True, hide_index=True)
 
-                tab_sum, tab_games, tab_cash = st.tabs(["📅 Summary", "🎮 Games", "🧑‍💼 Cashiers"])
+                tab_sum, tab_games, tab_cash = st.tabs(
+                    ["Summary", "Games", "Cashiers"])
 
                 with tab_sum:
-                    st.subheader("Busiest & least-busy month · best & worst value")
+                    st.subheader("Busiest and least-busy month, best and worst value month")
+                    st.caption("Busiest / least-busy is ranked by total betslip count. "
+                               "Best / worst value is ranked by total Gross Win for the month.")
                     bw = comp_tables["Best-Worst Month"]
                     show(bw)
                     if not bw.empty and "Betslips" in bw.columns:
@@ -1513,27 +1558,37 @@ if df_parts:
                         st.plotly_chart(fig_bw, use_container_width=True)
 
                 with tab_games:
-                    st.subheader("Betslip count by month")
+                    st.subheader("Betslip count by game, month by month")
+                    st.caption("Each game's betslip count for each month of the quarter, side by side.")
                     show(comp_tables["Games Betslips by Month"])
-                    st.subheader("Betslip increases & decreases")
+
+                    st.subheader("Betslip increases and decreases by game")
+                    st.caption("Change in betslip count from the first month to the last month of the quarter.")
                     show(comp_tables["Games Increase-Decrease"])
+
                     st.subheader("Games per branch")
+                    st.caption("Betslips, Paid In, Gross Win and Gross Win Margin for each game in each branch.")
                     show(comp_tables["Games per Branch"])
-                    st.subheader("GWM% over the quarter")
-                    show(comp_tables["Games GWM"], "GWM% = Gross Win ÷ Paid In")
+
+                    st.subheader("Gross Win Margin percentage by game")
+                    show(comp_tables["Games GWM"],
+                         "Gross Win Margin % = Gross Win ÷ Paid In. Shown per month and for the full quarter.")
 
                 with tab_cash:
-                    st.subheader("Betslip count by month")
+                    st.subheader("Betslip count by cashier, month by month")
+                    st.caption("Each cashier's betslip count for each month of the quarter, side by side.")
                     show(comp_tables["Cashier Betslips by Month"])
-                    st.subheader("GWM% over the quarter")
+
+                    st.subheader("Gross Win Margin percentage by cashier")
                     show(comp_tables["Cashier GWM"],
-                        "Per-month from the slip file's GW Margin %; quarter column is paid-in weighted.")
+                         "Gross Win Margin % per month. The quarter column is weighted by Paid In, "
+                         "not a simple average of the monthly percentages.")
 
                 st.divider()
                 xlsx_bytes = build_comparison_workbook(comp_tables, scope_label)
                 safe = scope_label.replace(" ", "_").replace("·", "-").replace("/", "-")
                 st.download_button(
-                    "⬇️ Download comparison (Excel)",
+                    "Download this comparison as an Excel workbook",
                     data=xlsx_bytes,
                     file_name=f"Playbet_Comparison_{safe}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
