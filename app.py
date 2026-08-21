@@ -303,6 +303,16 @@ def is_raw_betslip_csv(df):
     return ('slip #' in cols and 'pay-in shop' in cols and 'paid in date' in cols)
 
 
+def is_game_user_slip_csv(df):
+    """The ACCURATE per-cashier x per-game Slip Summary: has BOTH Game and User,
+    plus Bet Slips and the pre-computed GW Margin % / Net Win Margin columns.
+    This is the source that matches the official Branch/Cashier report, so its
+    margin values are used directly rather than recomputed."""
+    cols = [str(c).lower().strip() for c in df.columns]
+    return ('game' in cols and 'user' in cols and 'shop' in cols
+            and 'bet slips' in cols and 'gw margin %' in cols)
+
+
 def save_slip_rows_to_neon(df, file_date, source_file):
     """Store every cashier row from a Slip Summary CSV. Returns 'saved'|'duplicate'|'error'."""
     if _engine is None or df is None or df.empty:
@@ -499,7 +509,54 @@ def load_comparison_detail_from_folder():
             df.columns = [str(c).strip() for c in df.columns]
             year = str(file_date.year); month = file_date.strftime('%B'); mn = file_date.month
 
-            if is_cash_ops_csv(df):
+            if is_game_user_slip_csv(df):
+                # ACCURATE per-cashier x per-game Slip Summary. Use its own Bet Slips,
+                # Paid In, Paid Out, GW Margin % and Net Win Margin directly.
+                sub = df.copy()
+                sub['Shop'] = sub[_col(sub, 'shop')].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
+                sub = sub[sub['Shop'].isin(BRANCHES)]
+                if sub.empty:
+                    continue
+                gcol = _col(sub, 'game'); ucol = _col(sub, 'user')
+                bcol = _col(sub, 'bet slips'); pincol = _col(sub, 'paid in')
+                pocol = _col(sub, 'paid out'); gwcol = _col(sub, 'gw margin %')
+                nwcol = _col(sub, 'net win'); nwmcol = _col(sub, 'net win margin')
+                sub['_bets'] = sub[bcol].apply(clean_currency_string)
+                sub['_pin'] = sub[pincol].apply(clean_currency_string) if pincol else 0.0
+                sub['_po'] = sub[pocol].apply(clean_currency_string) if pocol else 0.0
+                sub['_gw'] = sub[gwcol].apply(clean_currency_string) if gwcol else 0.0
+                sub['_nw'] = sub[nwcol].apply(clean_currency_string) if nwcol else 0.0
+                sub['_nwm'] = sub[nwmcol].apply(clean_currency_string) if nwmcol else 0.0
+                sub['_game'] = sub[gcol].apply(clean_game_name)
+
+                # Game detail: sum bets/paid-in across cashiers; gross win from paid-in*margin
+                gd = sub.groupby(['Shop', '_game'], as_index=False).agg(
+                    BetSlips=('_bets', 'sum'), PaidIn=('_pin', 'sum'), PaidOut=('_po', 'sum'))
+                # Reconstruct gross win per game so GWM% stays consistent with the file.
+                sub['_gwabs'] = sub['_pin'] * sub['_gw'] / 100.0
+                gwabs = sub.groupby(['Shop', '_game'])['_gwabs'].sum().reset_index()
+                gd = gd.merge(gwabs, on=['Shop', '_game'], how='left')
+                game_parts.append(pd.DataFrame({
+                    'Shop': gd['Shop'], 'Game': gd['_game'],
+                    'BetSlips': gd['BetSlips'].astype(int), 'PaidIn': gd['PaidIn'],
+                    'PaidOutCount': 0, 'PaidOut': gd['PaidOut'], 'GrossWin': gd['_gwabs'],
+                    'Year': year, 'Month': month, 'MonthNum': mn}))
+
+                # Cashier detail: sum across games; margins are paid-in-weighted from the file.
+                sub['_nwabs'] = sub['_pin'] * sub['_nwm'] / 100.0
+                cg = sub.groupby([ucol, 'Shop'], as_index=False).agg(
+                    BetSlips=('_bets', 'sum'), PaidIn=('_pin', 'sum'),
+                    PaidOut=('_po', 'sum'), NetWin=('_nw', 'sum'),
+                    _gwabs=('_gwabs', 'sum'), _nwabs=('_nwabs', 'sum'))
+                cg['GWMargin'] = (cg['_gwabs'] / cg['PaidIn'].replace(0, float('nan')) * 100).round(2).fillna(0.0)
+                cg['NetWinMargin'] = (cg['_nwabs'] / cg['PaidIn'].replace(0, float('nan')) * 100).round(2).fillna(0.0)
+                slip_parts.append(pd.DataFrame({
+                    'Shop': cg['Shop'], 'Cashier': cg[ucol].astype(str).str.strip(),
+                    'BetSlips': cg['BetSlips'].astype(int), 'PaidIn': cg['PaidIn'],
+                    'PaidOut': cg['PaidOut'], 'GWMargin': cg['GWMargin'],
+                    'NetWin': cg['NetWin'], 'NetWinMargin': cg['NetWinMargin'],
+                    'Year': year, 'Month': month, 'MonthNum': mn}))
+            elif is_cash_ops_csv(df):
                 sub = df.copy()
                 sub['Shop'] = sub[_col(sub, 'shop')].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
                 sub = sub[sub['Shop'].isin(BRANCHES)]
