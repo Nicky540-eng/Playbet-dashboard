@@ -1547,18 +1547,21 @@ if df_parts:
                             return
                         if caption:
                             st.caption(caption)
-                        # Highlight the Best Month cell green and Worst Month cell red.
-                        highlight_cols = [c for c in ("Best Month", "Worst Month") if c in df.columns]
-                        if highlight_cols:
-                            def _hl(col):
-                                if col.name == "Best Month":
-                                    return ["background-color: #16A34A; color: white; font-weight: bold;"
-                                            if str(v).strip() else "" for v in col]
-                                if col.name == "Worst Month":
-                                    return ["background-color: #C0392B; color: white; font-weight: bold;"
-                                            if str(v).strip() else "" for v in col]
-                                return ["" for _ in col]
-                            styled = df.style.apply(_hl, subset=highlight_cols, axis=0)
+                        # In each row, colour the highest month figure green and the
+                        # lowest red, across the month columns only (not totals/labels).
+                        month_cols = [c for c in df.columns
+                                      if c in month_order]
+                        if month_cols and len(month_cols) >= 2:
+                            def _row_hilite(row):
+                                styles = pd.Series("", index=row.index)
+                                vals = pd.to_numeric(row[month_cols], errors="coerce")
+                                if vals.notna().any() and vals.max() != vals.min():
+                                    hi = vals.idxmax()
+                                    lo = vals.idxmin()
+                                    styles[hi] = "background-color: #16A34A; color: white; font-weight: bold;"
+                                    styles[lo] = "background-color: #C0392B; color: white; font-weight: bold;"
+                                return styles
+                            styled = df.style.apply(_row_hilite, axis=1)
                             st.dataframe(styled, use_container_width=True, hide_index=True)
                         else:
                             st.dataframe(df, use_container_width=True, hide_index=True)
