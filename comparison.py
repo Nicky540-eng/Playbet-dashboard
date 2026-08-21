@@ -44,16 +44,30 @@ def _month_cols(months):
 # ---------------------------------------------------------------------------
 
 def games_betslip_h2h(game_df, quarter_label):
-    """Betslip count per game, one column per month of the quarter."""
+    """Betslip count per game, one column per month of the quarter, with a
+    quarter total and each game's best and worst month flagged."""
     if game_df is None or game_df.empty:
         return pd.DataFrame()
     months = QUARTERS[quarter_label]
     piv = (game_df.groupby(["Game", "MonthNum"])["BetSlips"].sum()
                   .unstack("MonthNum").reindex(columns=months).fillna(0).astype(int))
-    piv.columns = _month_cols(months)
-    piv["Total"] = piv.sum(axis=1)
+    month_names = _month_cols(months)
+    piv.columns = month_names
+    piv["Quarter Total"] = piv.sum(axis=1)
+
+    def _best(row):
+        vals = row[month_names]
+        return vals.idxmax() if vals.max() > 0 else ""
+
+    def _worst(row):
+        vals = row[month_names]
+        active = vals[vals > 0]
+        return active.idxmin() if len(active) else ""
+
+    piv["Best Month"] = piv.apply(_best, axis=1)
+    piv["Worst Month"] = piv.apply(_worst, axis=1)
     piv.index.name = "Game"
-    return piv.sort_values("Total", ascending=False).reset_index()
+    return piv.sort_values("Quarter Total", ascending=False).reset_index()
 
 
 def games_increase_decrease(game_df, quarter_label):
@@ -108,17 +122,33 @@ def games_gwm(game_df, quarter_label):
 # ---------------------------------------------------------------------------
 
 def cashier_betslip_h2h(slip_df, quarter_label):
-    """Betslip count per cashier, one column per month of the quarter."""
+    """Betslip count per cashier, one column per month of the quarter, with a
+    quarter total and each cashier's best and worst month flagged."""
     if slip_df is None or slip_df.empty:
         return pd.DataFrame()
     months = QUARTERS[quarter_label]
     piv = (slip_df.pivot_table(index=["Cashier", "Shop"], columns="MonthNum",
                                values="BetSlips", aggfunc="sum")
                   .reindex(columns=months).fillna(0).astype(int))
-    piv.columns = _month_cols(months)
-    piv["Total"] = piv.sum(axis=1)
+    month_names = _month_cols(months)
+    piv.columns = month_names
+    piv["Quarter Total"] = piv.sum(axis=1)
+
+    # Best and worst month per cashier — only when they actually had activity.
+    def _best(row):
+        vals = row[month_names]
+        return vals.idxmax() if vals.max() > 0 else ""
+
+    def _worst(row):
+        vals = row[month_names]
+        active = vals[vals > 0]
+        return active.idxmin() if len(active) else ""
+
+    piv["Best Month"] = piv.apply(_best, axis=1)
+    piv["Worst Month"] = piv.apply(_worst, axis=1)
+
     out = piv.reset_index().rename(columns={"Shop": "Branch"})
-    return out.sort_values("Total", ascending=False)
+    return out.sort_values("Quarter Total", ascending=False)
 
 
 def cashier_gwm(slip_df, quarter_label):
