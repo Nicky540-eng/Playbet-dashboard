@@ -1254,6 +1254,57 @@ with st.sidebar.expander("🧹 Maintenance"):
         st.cache_data.clear()
         st.success("Cache cleared — re-reading all files.")
         st.rerun()
+
+    if st.button("Backfill missing months into comparison"):
+        # For any 2026 month that has a branch-level GGR summary in
+        # dashboard_uploaded_rows but no per-game detail in dashboard_game_rows
+        # (e.g. June, July), copy the branch totals in as one 'All Games' row per
+        # branch so those months appear in the games comparison. Branch-level only —
+        # per-game detail was never stored for these months.
+        if _engine is None:
+            st.error("No database connection.")
+        else:
+            try:
+                with _engine.begin() as c:
+                    summary_months = c.execute(text(
+                        "SELECT DISTINCT year, month, monthnum FROM dashboard_uploaded_rows WHERE year='2026'"
+                    )).fetchall()
+                    detail = set((r[0], r[1]) for r in c.execute(text(
+                        "SELECT DISTINCT year, month FROM dashboard_game_rows WHERE year='2026'"
+                    )).fetchall())
+                    todo = [(y, m, mn) for (y, m, mn) in summary_months if (y, m) not in detail]
+                    if not todo:
+                        st.info("Nothing to backfill — all 2026 summary months already have detail.")
+                    else:
+                        done = []
+                        for (year, month, monthnum) in todo:
+                            rows = c.execute(text("""
+                                SELECT shop, SUM(COALESCE(ggr,0)) AS ggr,
+                                       SUM(COALESCE(deposits,0)) AS paid_in,
+                                       SUM(COALESCE(paid_out_sum,0)) AS paid_out
+                                FROM dashboard_uploaded_rows
+                                WHERE year=:y AND month=:m GROUP BY shop
+                            """), {"y": year, "m": month}).fetchall()
+                            c.execute(text("""
+                                DELETE FROM dashboard_game_rows
+                                WHERE year=:y AND month=:m AND game='All Games'
+                            """), {"y": year, "m": month})
+                            for shop, ggr, paid_in, paid_out in rows:
+                                c.execute(text("""
+                                    INSERT INTO dashboard_game_rows
+                                        (source_file, shop, game, paid_in_count, paid_in_sum,
+                                         paid_out_count, paid_out_sum, gross_win, year, month, monthnum)
+                                    VALUES ('backfill_summary', :shop, 'All Games', 0, :pin,
+                                            0, :pout, :gw, :y, :m, :mn)
+                                """), {"shop": shop, "pin": float(paid_in or 0),
+                                       "pout": float(paid_out or 0), "gw": float(ggr or 0),
+                                       "y": year, "m": month, "mn": int(monthnum)})
+                            done.append(f"{month} {year}")
+                        st.cache_data.clear()
+                        st.success("Backfilled: " + ", ".join(done) + ". These show as 'All Games' per branch.")
+                        st.rerun()
+            except Exception as e:
+                st.error(f"Backfill failed: {e}")
     if st.button("Clear uploaded & comparison data"):
         if _engine is not None:
             try:
