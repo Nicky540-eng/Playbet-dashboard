@@ -1415,12 +1415,15 @@ if df_parts:
         st.subheader(f"{selected_view} Performance")
         c1, c2, c3, c4 = st.columns(4)
 
-        def render_metric_card(col, label, value_str):
+        def render_metric_card(col, label, value_str, color=None):
+            value_style = "font-size:1.75rem; font-weight:600; line-height:1.2;"
+            if color:
+                value_style += f" color:{color};"
             col.markdown(
                 f"""
                 <div style="display:flex; flex-direction:column; gap:0.25rem;">
                     <span style="font-size:0.875rem; color:rgba(49,51,63,0.6);">{label}</span>
-                    <span style="font-size:1.75rem; font-weight:600; line-height:1.2;">{value_str}</span>
+                    <span style="{value_style}">{value_str}</span>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -1428,7 +1431,12 @@ if df_parts:
 
         render_metric_card(c1, "Total GGR", f"R {total_ggr:,.2f}")
         render_metric_card(c2, "Total Deposits (Paid In)", f"R {total_deposits:,.2f}")
-        render_metric_card(c3, "YoY Growth", f"{yoy:+.1f}%" if selected_year == "All Time" else "N/A (Filtered)")
+        # YoY Growth: green when positive, red when negative.
+        if selected_year == "All Time":
+            yoy_color = "#16A34A" if yoy > 0 else ("#C0392B" if yoy < 0 else None)
+            render_metric_card(c3, "YoY Growth", f"{yoy:+.1f}%", color=yoy_color)
+        else:
+            render_metric_card(c3, "YoY Growth", "N/A (Filtered)")
         render_metric_card(c4, "Top Performer", top_game)
         st.divider()
 
@@ -1539,7 +1547,21 @@ if df_parts:
                             return
                         if caption:
                             st.caption(caption)
-                        st.dataframe(df, use_container_width=True, hide_index=True)
+                        # Highlight the Best Month cell green and Worst Month cell red.
+                        highlight_cols = [c for c in ("Best Month", "Worst Month") if c in df.columns]
+                        if highlight_cols:
+                            def _hl(col):
+                                if col.name == "Best Month":
+                                    return ["background-color: #16A34A; color: white; font-weight: bold;"
+                                            if str(v).strip() else "" for v in col]
+                                if col.name == "Worst Month":
+                                    return ["background-color: #C0392B; color: white; font-weight: bold;"
+                                            if str(v).strip() else "" for v in col]
+                                return ["" for _ in col]
+                            styled = df.style.apply(_hl, subset=highlight_cols, axis=0)
+                            st.dataframe(styled, use_container_width=True, hide_index=True)
+                        else:
+                            st.dataframe(df, use_container_width=True, hide_index=True)
 
                     tab_sum, tab_games, tab_cash = st.tabs(
                         ["Summary", "Games", "Cashiers"])
