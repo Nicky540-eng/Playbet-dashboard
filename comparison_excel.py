@@ -348,3 +348,76 @@ def build_comparison_workbook(tables: dict, meta: str) -> bytes:
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
+
+
+def build_branch_by_branch_workbook(per_branch_tables: dict, meta: str) -> bytes:
+    """Branch-by-branch workbook: one sheet per branch, each holding that branch's
+    games and cashiers for the quarter.
+
+    per_branch_tables: {branch_name: {table_name: DataFrame, ...}, ...}
+    Sheet order per branch: Games betslips, Games GWM, Cashier betslips, Cashier GWM.
+    """
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    # A short overview sheet listing the branches covered.
+    ov = wb.create_sheet(title="Overview")
+    ov.sheet_view.showGridLines = False
+    ov.merge_cells("A1:E2")
+    ov["A1"] = "PLAYBET"
+    ov["A1"].font = Font(name="Arial", size=24, bold=True, color=WHITE)
+    ov["A1"].fill = FILL_NAVY
+    ov["A1"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    for r in (1, 2):
+        for c in range(1, 6):
+            ov.cell(row=r, column=c).fill = FILL_NAVY
+    ov.row_dimensions[1].height = 24
+    ov.merge_cells("A3:E3")
+    ov["A3"] = "Branch-by-Branch Performance Analysis"
+    ov["A3"].font = Font(name="Arial", size=14, bold=True, color=SLATE)
+    ov.merge_cells("A4:E4")
+    ov["A4"] = meta
+    ov["A4"].font = F_SUBHEAD
+    ov["A6"] = "Branches in this workbook:"
+    ov["A6"].font = F_BOLD
+    r = 7
+    for b in per_branch_tables.keys():
+        ov.cell(row=r, column=1, value=f"•  {b}").font = F_BASE
+        r += 1
+    ov.column_dimensions["A"].width = 40
+
+    # Sheet name suffixes per table (kept short so branch+suffix fits 31 chars).
+    order = [
+        ("Games Betslips by Month", "Games"),
+        ("Games GWM", "Games GWM%"),
+        ("Cashier Betslips by Month", "Cashiers"),
+        ("Cashier GWM", "Cashiers GWM%"),
+    ]
+    titles = {
+        "Games Betslips by Month": "Games — Betslip Count by Month",
+        "Games GWM": "Games — Gross Win Margin %",
+        "Cashier Betslips by Month": "Cashiers — Betslip Count by Month",
+        "Cashier GWM": "Cashiers — Gross Win Margin %",
+    }
+
+    for branch, tables in per_branch_tables.items():
+        for key, suffix in order:
+            df = tables.get(key)
+            if df is None or df.empty:
+                continue
+            # Sheet name like "Malvern · Games" trimmed to 31 chars.
+            raw = f"{branch} {suffix}"
+            tab = raw[:31]
+            base = tab
+            n = 2
+            while tab in wb.sheetnames:
+                tab = f"{base[:28]}_{n}"
+                n += 1
+            ws = wb.create_sheet(title=tab)
+            _banner(ws, len(df.columns), f"{branch} — {titles.get(key, key)}", meta)
+            _write_table(ws, df, start_row=4, total_row=("Betslip" in key))
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
