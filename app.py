@@ -1454,16 +1454,20 @@ if df_parts:
         else:
             st.warning("No data available for Deposits chart")
 
-        # --- GAME REVENUE ANALYSIS ---
+        # --- GAME REVENUE ANALYSIS (2026 only) ---
         st.subheader("Game Revenue Analysis")
-        available_games = sorted(df_filtered['Game'].dropna().unique().tolist()) if not df_filtered.empty else []
+        st.caption("Showing 2026 only.")
+        # This section is scoped to 2026 regardless of the sidebar year filter,
+        # driven by the Slip Summary + Cash Operations uploads.
+        gra_df = df_filtered[df_filtered['Year'].astype(str) == '2026'] if not df_filtered.empty else df_filtered
+        available_games = sorted(gra_df['Game'].dropna().unique().tolist()) if not gra_df.empty else []
         if not available_games:
-            st.info("💡 No game data available for the current filter selection.")
+            st.info("💡 No 2026 game data yet. Upload the Slip Summary and Cash Operations files.")
         else:
             selected_game = st.selectbox("Select Game:", available_games, key="game_revenue_game_select")
-            game_df = df_filtered[df_filtered['Game'] == selected_game]
+            game_df = gra_df[gra_df['Game'] == selected_game]
             if game_df.empty:
-                st.warning(f"No data found for '{selected_game}' in the current filter.")
+                st.warning(f"No 2026 data found for '{selected_game}'.")
             else:
                 st.markdown(f"**{selected_game} — GGR by Branch and Year**")
                 branch_year = game_df.pivot_table(index='Shop', columns='Year', values='GGR', aggfunc='sum', fill_value=0).astype(float)
@@ -1549,132 +1553,130 @@ if df_parts:
             st.info("💡 Upload a Slip Summary and/or Cash Operations CSV to build the quarterly comparison. "
                     "These carry per-cashier and per-game betslip detail the comparison needs.")
         else:
-            # choose the year + quarter to analyse
-            comp_years = sorted(set(
-                (list(slip_full['Year'].astype(str)) if not slip_full.empty else []) +
-                (list(game_full['Year'].astype(str)) if not game_full.empty else [])
-            ))
-            cc1, cc2 = st.columns(2)
-            comp_year = cc1.selectbox("Comparison Year:", comp_years, index=len(comp_years) - 1)
-            comp_quarter = cc2.selectbox("Comparison Quarter:", list(cmp.QUARTERS.keys()), index=0)
+            # This section is scoped to 2026 only, driven by the Slip Summary +
+            # Cash Operations uploads. Only the quarter is selectable.
+            comp_year = "2026"
+            # keep only 2026 detail
+            slip_full = slip_full[slip_full["Year"].astype(str) == "2026"] if not slip_full.empty else slip_full
+            game_full = game_full[game_full["Year"].astype(str) == "2026"] if not game_full.empty else game_full
 
-            comp_branch = None if selected_view == "All Branches Dashboard" else selected_view
-
-            slip_s = cmp.scope(slip_full, comp_year, comp_quarter, comp_branch)
-            game_s = cmp.scope(game_full, comp_year, comp_quarter, comp_branch)
-
-            # Remove games present in 2024 but gone by 2026 — computed from the FULL
-            # dataset (both years), then applied to the scoped frame. Scoping alone
-            # only holds one year, so the drop must reference game_full.
-            if not game_full.empty:
-                years_all = set(game_full["Year"].astype(str))
-                if "2024" in years_all and "2026" in years_all:
-                    g2024 = set(game_full[game_full["Year"].astype(str) == "2024"]["Game"])
-                    g2026 = set(game_full[game_full["Year"].astype(str) == "2026"]["Game"])
-                    discontinued = g2024 - g2026
-                    if discontinued and game_s is not None and not game_s.empty:
-                        game_s = game_s[~game_s["Game"].isin(discontinued)].copy()
-
-            scope_label = f"{comp_year} {comp_quarter}" + (f" · {comp_branch}" if comp_branch else " · All Branches")
-            st.caption(f"Showing: **{scope_label}**")
-
-            if (slip_s is None or slip_s.empty) and (game_s is None or game_s.empty):
-                st.warning("No comparison data for this year/quarter/branch selection.")
+            if (slip_full is None or slip_full.empty) and (game_full is None or game_full.empty):
+                st.info("💡 No 2026 comparison data yet. Upload the Slip Summary and Cash Operations files.")
+                _has_2026 = False
             else:
-                comp_tables = {
-                    "Best-Worst Month":        cmp.best_worst_month(slip_s, game_s, comp_quarter),
-                    "Games Betslips by Month": cmp.games_betslip_h2h(game_s, comp_quarter),
-                    "Games Increase-Decrease": cmp.games_increase_decrease(game_s, comp_quarter),
-                    "Games per Branch":        cmp.games_per_branch(game_s),
-                    "Games GWM":               cmp.games_gwm(game_s, comp_quarter),
-                    "Cashier Betslips by Month": cmp.cashier_betslip_h2h(slip_s, comp_quarter),
-                    "Cashier GWM":             cmp.cashier_gwm(slip_s, comp_quarter),
-                }
+                _has_2026 = True
 
-                def show(df, caption=None):
-                    if df is None or df.empty:
-                        st.info("No data for this selection.")
-                        return
-                    if caption:
-                        st.caption(caption)
-                    st.dataframe(df, use_container_width=True, hide_index=True)
+            if _has_2026:
+                st.caption("Showing 2026 only.")
+                comp_quarter = st.selectbox("Comparison Quarter:", list(cmp.QUARTERS.keys()), index=0)
 
-                tab_sum, tab_games, tab_cash = st.tabs(
-                    ["Summary", "Games", "Cashiers"])
+                comp_branch = None if selected_view == "All Branches Dashboard" else selected_view
 
-                with tab_sum:
-                    st.subheader("Busiest and least-busy month, best and worst value month")
-                    st.caption("Busiest / least-busy is ranked by total betslip count. "
-                               "Best / worst value is ranked by total Gross Win for the month.")
-                    bw = comp_tables["Best-Worst Month"]
-                    show(bw)
-                    if not bw.empty and "Betslips" in bw.columns:
-                        fig_bw = px.bar(bw, x="Month", y="Betslips", color="Month",
-                                        template="plotly_white")
-                        fig_bw.update_layout(showlegend=False, yaxis_tickformat=",.0f",
-                                             margin=dict(t=10, b=10))
-                        st.plotly_chart(fig_bw, use_container_width=True)
+                slip_s = cmp.scope(slip_full, comp_year, comp_quarter, comp_branch)
+                game_s = cmp.scope(game_full, comp_year, comp_quarter, comp_branch)
 
-                with tab_games:
-                    st.subheader("Betslip count by game, month by month")
-                    st.caption("Each game's betslip count for each month of the quarter, side by side.")
-                    show(comp_tables["Games Betslips by Month"])
+                discontinued = set()
 
-                    st.subheader("Betslip increases and decreases by game")
-                    st.caption("Change in betslip count from the first month to the last month of the quarter.")
-                    show(comp_tables["Games Increase-Decrease"])
+                scope_label = f"{comp_year} {comp_quarter}" + (f" · {comp_branch}" if comp_branch else " · All Branches")
+                st.caption(f"Showing: **{scope_label}**")
 
-                    st.subheader("Games per branch")
-                    st.caption("Betslips, Paid In, Gross Win and Gross Win Margin for each game in each branch.")
-                    show(comp_tables["Games per Branch"])
-
-                    st.subheader("Gross Win Margin percentage by game")
-                    show(comp_tables["Games GWM"],
-                         "Gross Win Margin % = Gross Win ÷ Paid In. Shown per month and for the full quarter.")
-
-                with tab_cash:
-                    st.subheader("Betslip count by cashier, month by month")
-                    st.caption("Each cashier's betslip count for each month of the quarter, side by side.")
-                    show(comp_tables["Cashier Betslips by Month"])
-
-                    st.subheader("Gross Win Margin percentage by cashier")
-                    show(comp_tables["Cashier GWM"],
-                         "Gross Win Margin % per month. The quarter column is weighted by Paid In, "
-                         "not a simple average of the monthly percentages.")
-
-                st.divider()
-
-                # Branch-by-branch workbook: build each branch's tables from the full
-                # (unscoped-by-branch) frames, so every branch gets its own sheet.
-                from comparison_excel import build_branch_by_branch_workbook
-
-                # Frames scoped to the year+quarter but NOT to a single branch.
-                slip_q = cmp.scope(slip_full, comp_year, comp_quarter, None)
-                game_q = cmp.scope(game_full, comp_year, comp_quarter, None)
-                if discontinued and game_q is not None and not game_q.empty:
-                    game_q = game_q[~game_q["Game"].isin(discontinued)].copy()
-
-                branches_present = sorted(
-                    set(([] if game_q is None or game_q.empty else list(game_q["Shop"].unique())) +
-                        ([] if slip_q is None or slip_q.empty else list(slip_q["Shop"].unique())))
-                )
-                per_branch_tables = {}
-                for b in branches_present:
-                    gb = game_q[game_q["Shop"] == b] if game_q is not None and not game_q.empty else game_q
-                    sb = slip_q[slip_q["Shop"] == b] if slip_q is not None and not slip_q.empty else slip_q
-                    per_branch_tables[b] = {
-                        "Games Betslips by Month": cmp.games_betslip_h2h(gb, comp_quarter),
-                        "Games GWM": cmp.games_gwm(gb, comp_quarter),
-                        "Cashier Betslips by Month": cmp.cashier_betslip_h2h(sb, comp_quarter),
-                        "Cashier GWM": cmp.cashier_gwm(sb, comp_quarter),
+                if (slip_s is None or slip_s.empty) and (game_s is None or game_s.empty):
+                    st.warning("No comparison data for this quarter/branch selection.")
+                else:
+                    comp_tables = {
+                        "Best-Worst Month":        cmp.best_worst_month(slip_s, game_s, comp_quarter),
+                        "Games Betslips by Month": cmp.games_betslip_h2h(game_s, comp_quarter),
+                        "Games Increase-Decrease": cmp.games_increase_decrease(game_s, comp_quarter),
+                        "Games per Branch":        cmp.games_per_branch(game_s),
+                        "Games GWM":               cmp.games_gwm(game_s, comp_quarter),
+                        "Cashier Betslips by Month": cmp.cashier_betslip_h2h(slip_s, comp_quarter),
+                        "Cashier GWM":             cmp.cashier_gwm(slip_s, comp_quarter),
                     }
 
-                safe = f"{comp_year} {comp_quarter}".replace(" ", "_").replace("(", "").replace(")", "").replace("–", "-").replace("/", "-")
-                branch_xlsx = build_branch_by_branch_workbook(
-                    per_branch_tables, f"{comp_year} {comp_quarter}")
-                st.download_button(
-                    "Download branch-by-branch performance (Excel)",
-                    data=branch_xlsx,
-                    file_name=f"Playbet_Branch_by_Branch_{safe}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
+                    def show(df, caption=None):
+                        if df is None or df.empty:
+                            st.info("No data for this selection.")
+                            return
+                        if caption:
+                            st.caption(caption)
+                        st.dataframe(df, use_container_width=True, hide_index=True)
+
+                    tab_sum, tab_games, tab_cash = st.tabs(
+                        ["Summary", "Games", "Cashiers"])
+
+                    with tab_sum:
+                        st.subheader("Busiest and least-busy month, best and worst value month")
+                        st.caption("Busiest / least-busy is ranked by total betslip count. "
+                                   "Best / worst value is ranked by total Gross Win for the month.")
+                        bw = comp_tables["Best-Worst Month"]
+                        show(bw)
+                        if not bw.empty and "Betslips" in bw.columns:
+                            fig_bw = px.bar(bw, x="Month", y="Betslips", color="Month",
+                                            template="plotly_white")
+                            fig_bw.update_layout(showlegend=False, yaxis_tickformat=",.0f",
+                                                 margin=dict(t=10, b=10))
+                            st.plotly_chart(fig_bw, use_container_width=True)
+
+                    with tab_games:
+                        st.subheader("Betslip count by game, month by month")
+                        st.caption("Each game's betslip count for each month of the quarter, side by side.")
+                        show(comp_tables["Games Betslips by Month"])
+
+                        st.subheader("Betslip increases and decreases by game")
+                        st.caption("Change in betslip count from the first month to the last month of the quarter.")
+                        show(comp_tables["Games Increase-Decrease"])
+
+                        st.subheader("Games per branch")
+                        st.caption("Betslips, Paid In, Gross Win and Gross Win Margin for each game in each branch.")
+                        show(comp_tables["Games per Branch"])
+
+                        st.subheader("Gross Win Margin percentage by game")
+                        show(comp_tables["Games GWM"],
+                             "Gross Win Margin % = Gross Win ÷ Paid In. Shown per month and for the full quarter.")
+
+                    with tab_cash:
+                        st.subheader("Betslip count by cashier, month by month")
+                        st.caption("Each cashier's betslip count for each month of the quarter, side by side.")
+                        show(comp_tables["Cashier Betslips by Month"])
+
+                        st.subheader("Gross Win Margin percentage by cashier")
+                        show(comp_tables["Cashier GWM"],
+                             "Gross Win Margin % per month. The quarter column is weighted by Paid In, "
+                             "not a simple average of the monthly percentages.")
+
+                    st.divider()
+
+                    # Branch-by-branch workbook: build each branch's tables from the full
+                    # (unscoped-by-branch) frames, so every branch gets its own sheet.
+                    from comparison_excel import build_branch_by_branch_workbook
+
+                    # Frames scoped to the year+quarter but NOT to a single branch.
+                    slip_q = cmp.scope(slip_full, comp_year, comp_quarter, None)
+                    game_q = cmp.scope(game_full, comp_year, comp_quarter, None)
+                    if discontinued and game_q is not None and not game_q.empty:
+                        game_q = game_q[~game_q["Game"].isin(discontinued)].copy()
+
+                    branches_present = sorted(
+                        set(([] if game_q is None or game_q.empty else list(game_q["Shop"].unique())) +
+                            ([] if slip_q is None or slip_q.empty else list(slip_q["Shop"].unique())))
+                    )
+                    per_branch_tables = {}
+                    for b in branches_present:
+                        gb = game_q[game_q["Shop"] == b] if game_q is not None and not game_q.empty else game_q
+                        sb = slip_q[slip_q["Shop"] == b] if slip_q is not None and not slip_q.empty else slip_q
+                        per_branch_tables[b] = {
+                            "Games Betslips by Month": cmp.games_betslip_h2h(gb, comp_quarter),
+                            "Games GWM": cmp.games_gwm(gb, comp_quarter),
+                            "Cashier Betslips by Month": cmp.cashier_betslip_h2h(sb, comp_quarter),
+                            "Cashier GWM": cmp.cashier_gwm(sb, comp_quarter),
+                        }
+
+                    safe = f"{comp_year} {comp_quarter}".replace(" ", "_").replace("(", "").replace(")", "").replace("–", "-").replace("/", "-")
+                    branch_xlsx = build_branch_by_branch_workbook(
+                        per_branch_tables, f"{comp_year} {comp_quarter}")
+                    st.download_button(
+                        "Download branch-by-branch performance (Excel)",
+                        data=branch_xlsx,
+                        file_name=f"Playbet_Branch_by_Branch_{safe}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
