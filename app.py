@@ -1454,69 +1454,9 @@ if df_parts:
         else:
             st.warning("No data available for Deposits chart")
 
-        # --- GAME REVENUE ANALYSIS (2026 only) ---
-        st.subheader("Game Revenue Analysis")
-        st.caption("Showing 2026 only.")
-        # This section is scoped to 2026 regardless of the sidebar year filter,
-        # driven by the Slip Summary + Cash Operations uploads.
-        gra_df = df_filtered[df_filtered['Year'].astype(str) == '2026'] if not df_filtered.empty else df_filtered
-        available_games = sorted(gra_df['Game'].dropna().unique().tolist()) if not gra_df.empty else []
-        if not available_games:
-            st.info("💡 No 2026 game data yet. Upload the Slip Summary and Cash Operations files.")
-        else:
-            selected_game = st.selectbox("Select Game:", available_games, key="game_revenue_game_select")
-            game_df = gra_df[gra_df['Game'] == selected_game]
-            if game_df.empty:
-                st.warning(f"No 2026 data found for '{selected_game}'.")
-            else:
-                st.markdown(f"**{selected_game} — GGR by Branch and Year**")
-                branch_year = game_df.pivot_table(index='Shop', columns='Year', values='GGR', aggfunc='sum', fill_value=0).astype(float)
-                branch_year = branch_year.reindex([b for b in BRANCHES if b in branch_year.index])
-                year_cols_sorted = sorted(branch_year.columns, key=lambda y: int(y))
-                branch_year = branch_year[year_cols_sorted]
-                branch_year.loc['All Branches'] = branch_year.sum(numeric_only=True)
-                branch_year['Overall Total'] = branch_year.sum(axis=1)
-                st.dataframe(branch_year.style.format({col: "R {:,.2f}" for col in branch_year.columns}), use_container_width=True)
-                st.divider()
-
-                st.markdown(f"**{selected_game} — Month-to-Month GGR by Year**")
-                month_year = game_df.groupby(['MonthNum', 'Month', 'Year'])['GGR'].sum().reset_index()
-                month_year = month_year.sort_values('MonthNum')
-                if not month_year.empty:
-                    month_table = month_year.pivot_table(index='Month', columns='Year', values='GGR', aggfunc='sum')
-                    month_table = month_table.reindex(month_order)
-                    year_cols_sorted2 = sorted(month_table.columns, key=lambda y: int(y))
-                    month_table = month_table[year_cols_sorted2]
-                    has_data = month_table.notna()
-                    month_table = month_table.fillna(0.0).astype(float)
-                    month_table['Total'] = month_table[year_cols_sorted2].sum(axis=1)
-
-                    def color_yoy_cell(row):
-                        styles = pd.Series('', index=row.index)
-                        month_name = row.name
-                        for i, year_col in enumerate(year_cols_sorted2):
-                            if not has_data.loc[month_name, year_col]:
-                                continue
-                            prev_val = None
-                            for prev_year_col in reversed(year_cols_sorted2[:i]):
-                                if has_data.loc[month_name, prev_year_col]:
-                                    prev_val = row[prev_year_col]
-                                    break
-                            if prev_val is None:
-                                continue
-                            curr_val = row[year_col]
-                            if curr_val > prev_val:
-                                styles[year_col] = 'color: #27ae60; font-weight: bold;'
-                            elif curr_val < prev_val:
-                                styles[year_col] = 'color: #c0392b; font-weight: bold;'
-                        return styles
-
-                    format_map = {col: "R {:,.2f}" for col in year_cols_sorted2}
-                    format_map['Total'] = "R {:,.2f}"
-                    styled_month_table = month_table.style.format(format_map).apply(color_yoy_cell, axis=1)
-                    st.dataframe(styled_month_table, use_container_width=True)
-                else:
-                    st.warning(f"No month-to-month data available for '{selected_game}'.")
+        # (Game Revenue Analysis removed — its GGR-by-branch-and-year and
+        # month-to-month GGR tables are replaced by the Quarterly Comparison below,
+        # which shows games per branch and betslips by month for 2026.)
         st.divider()
 
         # =============================================================
