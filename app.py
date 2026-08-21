@@ -1245,8 +1245,12 @@ if slip_files or cash_files:
 
 # ---- Maintenance: clear ingested data so you can re-upload cleanly ----
 with st.sidebar.expander("🧹 Maintenance"):
-    st.caption("Clears uploaded rows so you can re-upload through the two boxes above. "
-               "Use this once to remove the old mixed data behind the inflated May bar.")
+    st.caption("Reload re-reads the files in the repo folders (use after adding files "
+               "to the uploads/ folder). Clear deletes uploaded rows from the database.")
+    if st.button("Reload data from files"):
+        st.cache_data.clear()
+        st.success("Cache cleared — re-reading all files.")
+        st.rerun()
     if st.button("Clear uploaded & comparison data"):
         if _engine is not None:
             try:
