@@ -1547,10 +1547,14 @@ if df_parts:
                             return
                         if caption:
                             st.caption(caption)
-                        # In each row, colour the highest month figure green and the
-                        # lowest red, across the month columns only (not totals/labels).
+                        # In each row, colour the highest figure green and the lowest
+                        # red, across the monthly columns only. Covers bare month
+                        # columns (betslips) and monthly "... % January" GWM columns,
+                        # but never the Quarter/Total columns.
                         month_cols = [c for c in df.columns
-                                      if c in month_order]
+                                      if (c in month_order or
+                                          (any(m in str(c) for m in month_order) and "Quarter" not in str(c)))
+                                      and "Total" not in str(c)]
                         if month_cols and len(month_cols) >= 2:
                             def _row_hilite(row):
                                 styles = pd.Series("", index=row.index)
