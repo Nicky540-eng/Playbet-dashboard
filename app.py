@@ -593,8 +593,6 @@ def load_comparison_detail_from_historical():
         except Exception:
             continue
         for sh in wb.sheetnames:
-            if "games and users" not in sh.lower():
-                continue
             month, mn = _month_from_sheet(sh)
             if not month:
                 continue
@@ -605,7 +603,10 @@ def load_comparison_detail_from_historical():
             except StopIteration:
                 continue
             idx = {str(h).strip().lower(): i for i, h in enumerate(header) if h}
-            if "user" not in idx or "shop" not in idx or "bet slips" not in idx:
+            # Detect the per-cashier×game layout by its COLUMNS, not the sheet name.
+            # Some months (e.g. April) sit on a sheet named "Excl users" but still
+            # carry the full Game/Shop/User/Bet Slips layout — those must be read.
+            if not ("game" in idx and "user" in idx and "shop" in idx and "bet slips" in idx):
                 continue
 
             def g(row, key):
@@ -1589,11 +1590,38 @@ if df_parts:
                          "not a simple average of the monthly percentages.")
 
                 st.divider()
-                xlsx_bytes = build_comparison_workbook(comp_tables, scope_label)
-                safe = scope_label.replace(" ", "_").replace("·", "-").replace("/", "-")
+
+                # Branch-by-branch workbook: build each branch's tables from the full
+                # (unscoped-by-branch) frames, so every branch gets its own sheet.
+                from comparison_excel import build_branch_by_branch_workbook
+
+                # Frames scoped to the year+quarter but NOT to a single branch.
+                slip_q = cmp.scope(slip_full, comp_year, comp_quarter, None)
+                game_q = cmp.scope(game_full, comp_year, comp_quarter, None)
+                if discontinued and game_q is not None and not game_q.empty:
+                    game_q = game_q[~game_q["Game"].isin(discontinued)].copy()
+
+                branches_present = sorted(
+                    set(([] if game_q is None or game_q.empty else list(game_q["Shop"].unique())) +
+                        ([] if slip_q is None or slip_q.empty else list(slip_q["Shop"].unique())))
+                )
+                per_branch_tables = {}
+                for b in branches_present:
+                    gb = game_q[game_q["Shop"] == b] if game_q is not None and not game_q.empty else game_q
+                    sb = slip_q[slip_q["Shop"] == b] if slip_q is not None and not slip_q.empty else slip_q
+                    per_branch_tables[b] = {
+                        "Games Betslips by Month": cmp.games_betslip_h2h(gb, comp_quarter),
+                        "Games GWM": cmp.games_gwm(gb, comp_quarter),
+                        "Cashier Betslips by Month": cmp.cashier_betslip_h2h(sb, comp_quarter),
+                        "Cashier GWM": cmp.cashier_gwm(sb, comp_quarter),
+                    }
+
+                safe = f"{comp_year} {comp_quarter}".replace(" ", "_").replace("(", "").replace(")", "").replace("–", "-").replace("/", "-")
+                branch_xlsx = build_branch_by_branch_workbook(
+                    per_branch_tables, f"{comp_year} {comp_quarter}")
                 st.download_button(
-                    "Download this comparison as an Excel workbook",
-                    data=xlsx_bytes,
-                    file_name=f"Playbet_Comparison_{safe}.xlsx",
+                    "Download branch-by-branch performance (Excel)",
+                    data=branch_xlsx,
+                    file_name=f"Playbet_Branch_by_Branch_{safe}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
