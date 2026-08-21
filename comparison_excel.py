@@ -1,4 +1,4 @@
-"""
+       """
 comparison_excel.py
 Builds an executive-grade comparison workbook for the Playbet quarterly comparison.
 
@@ -16,6 +16,9 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, NamedStyle
 from openpyxl.utils import get_column_letter
+
+MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+               "July", "August", "September", "October", "November", "December"]
 
 # --- palette (Playbet slate + emerald, matching the dashboard) ---
 NAVY      = "0F172A"   # slate-900 banner
@@ -85,11 +88,28 @@ def _banner(ws, ncols, title, subtitle):
     ws.row_dimensions[2].height = 18
 
 
-def _write_table(ws, df, start_row, total_row=True, rank_cols=None, change_cols=None):
-    """Write a styled table. Returns the row after the table."""
+def _write_table(ws, df, start_row, total_row=True, rank_cols=None, change_cols=None,
+                 month_cols=None):
+    """Write a styled table. Returns the row after the table.
+    If month_cols is given, in each row the highest value among those columns is
+    filled green and the lowest red."""
     rank_cols = rank_cols or []
     change_cols = change_cols or []
+    month_cols = month_cols or []
     ncols = len(df.columns)
+    GREEN_FILL = PatternFill("solid", fgColor="16A34A")
+    RED_FILL = PatternFill("solid", fgColor="C0392B")
+    WHITE_BOLD = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+
+    present_months = [c for c in month_cols if c in df.columns]
+    row_hilo = []
+    if present_months:
+        for _, row in df.iterrows():
+            vals = pd.to_numeric(pd.Series({c: row[c] for c in present_months}), errors="coerce")
+            if vals.notna().any() and vals.max() != vals.min():
+                row_hilo.append((vals.idxmax(), vals.idxmin()))
+            else:
+                row_hilo.append((None, None))
 
     # header
     hr = start_row
@@ -138,6 +158,15 @@ def _write_table(ws, df, start_row, total_row=True, rank_cols=None, change_cols=
                     cell.font = Font(name="Arial", size=10, bold=True, color=EMERALD_D)
                 elif "least" in low or "worst" in low or "decrease" in low:
                     cell.font = Font(name="Arial", size=10, bold=True, color=NEG_RED)
+            # highest month figure green, lowest red (per row)
+            if row_hilo:
+                hi, lo = row_hilo[i]
+                if col == hi:
+                    cell.fill = GREEN_FILL
+                    cell.font = WHITE_BOLD
+                elif col == lo:
+                    cell.fill = RED_FILL
+                    cell.font = WHITE_BOLD
         r += 1
 
     # TOTAL row (numeric columns only, first column labelled TOTAL)
@@ -415,9 +444,12 @@ def build_branch_by_branch_workbook(per_branch_tables: dict, meta: str) -> bytes
                 n += 1
             ws = wb.create_sheet(title=tab)
             _banner(ws, len(df.columns), f"{branch} — {titles.get(key, key)}", meta)
-            _write_table(ws, df, start_row=4, total_row=("Betslip" in key))
+            mcols = [c for c in MONTH_NAMES if c in df.columns] if "Betslip" in key else []
+            _write_table(ws, df, start_row=4, total_row=("Betslip" in key),
+                         month_cols=mcols)
 
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
+                                                                                                                                             
