@@ -1076,10 +1076,12 @@ def load_uploaded_csvs_from_folder():
                 sub['_dep'] = sub[gin].apply(clean_currency_string) if gin else 0.0
                 sub['_ggr'] = sub[gw].apply(clean_currency_string) if gw else 0.0
                 sub['_po'] = sub[po].apply(clean_currency_string) if po else 0.0
-                grouped = sub.groupby('Shop', as_index=False).agg(
+                game_col = _col(sub, 'game')
+                grouped = sub.groupby(['Shop', game_col], as_index=False).agg(
                     Deposits=('_dep', 'sum'), GGR=('_ggr', 'sum'),
                     **{'Paid Out Sum': ('_po', 'sum')})
-                grouped['Game'] = 'All Games'
+                grouped = grouped.rename(columns={game_col: 'Game'})
+                grouped['Game'] = grouped['Game'].apply(clean_game_name)
                 grouped['GW Margin %'] = 0.0
                 grouped['Net Win'] = grouped['GGR']
                 grouped['Net Win Margin'] = 0.0
