@@ -452,4 +452,3 @@ def build_branch_by_branch_workbook(per_branch_tables: dict, meta: str) -> bytes
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
-                                                                                                             
