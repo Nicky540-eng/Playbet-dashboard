@@ -314,7 +314,9 @@ def is_game_user_slip_csv(df):
 
 
 def save_slip_rows_to_neon(df, file_date, source_file):
-    """Store every cashier row from a Slip Summary CSV. Returns 'saved'|'duplicate'|'error'."""
+    """Store every cashier row from a Slip Summary CSV. Returns 'saved'|'duplicate'|'error'.
+    Handles both the per-cashier format and the detailed per-cashier×per-game format
+    (which is aggregated to one row per cashier, with paid-in-weighted margins)."""
     if _engine is None or df is None or df.empty:
         return "error"
     df = df.copy()
@@ -333,19 +335,43 @@ def save_slip_rows_to_neon(df, file_date, source_file):
     month = file_date.strftime('%B')
     monthnum = file_date.month
 
-    rows = []
-    for _, r in df.iterrows():
-        shop = str(r[shop_c]).strip().replace('Potch', 'Potchefstroom')
-        if shop not in BRANCHES:
-            continue
-        rows.append({
-            "shop": shop, "cashier": str(r[user_c]).strip(),
-            "slips": int(clean_currency_string(r[slips_c])),
-            "pin": clean_currency_string(r[pin_c]) if pin_c else 0.0,
-            "pout": clean_currency_string(r[pout_c]) if pout_c else 0.0,
-            "gw": clean_currency_string(r[gw_c]) if gw_c else 0.0,
-            "nw": clean_currency_string(r[nw_c]) if nw_c else 0.0,
-        })
+    # Detailed per-game format: aggregate to one row per cashier. Margin is
+    # paid-in-weighted so it matches the official report.
+    if is_game_user_slip_csv(df):
+        w = df.copy()
+        w['_shop'] = w[shop_c].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
+        w = w[w['_shop'].isin(BRANCHES)]
+        w['_slips'] = w[slips_c].apply(clean_currency_string)
+        w['_pin'] = w[pin_c].apply(clean_currency_string) if pin_c else 0.0
+        w['_pout'] = w[pout_c].apply(clean_currency_string) if pout_c else 0.0
+        w['_gwabs'] = w['_pin'] * (w[gw_c].apply(clean_currency_string) if gw_c else 0.0) / 100.0
+        w['_nw'] = w[nw_c].apply(clean_currency_string) if nw_c else 0.0
+        agg = w.groupby([user_c, '_shop'], as_index=False).agg(
+            slips=('_slips', 'sum'), pin=('_pin', 'sum'), pout=('_pout', 'sum'),
+            gwabs=('_gwabs', 'sum'), nw=('_nw', 'sum'))
+        rows = []
+        for _, r in agg.iterrows():
+            pin = float(r['pin'])
+            rows.append({
+                "shop": r['_shop'], "cashier": str(r[user_c]).strip(),
+                "slips": int(r['slips']), "pin": pin, "pout": float(r['pout']),
+                "gw": round(r['gwabs'] / pin * 100, 2) if pin else 0.0,
+                "nw": float(r['nw']),
+            })
+    else:
+        rows = []
+        for _, r in df.iterrows():
+            shop = str(r[shop_c]).strip().replace('Potch', 'Potchefstroom')
+            if shop not in BRANCHES:
+                continue
+            rows.append({
+                "shop": shop, "cashier": str(r[user_c]).strip(),
+                "slips": int(clean_currency_string(r[slips_c])),
+                "pin": clean_currency_string(r[pin_c]) if pin_c else 0.0,
+                "pout": clean_currency_string(r[pout_c]) if pout_c else 0.0,
+                "gw": clean_currency_string(r[gw_c]) if gw_c else 0.0,
+                "nw": clean_currency_string(r[nw_c]) if nw_c else 0.0,
+            })
     if not rows:
         return "error"
 
@@ -1265,7 +1291,7 @@ def _process_uploads(files, kind):
                     st.sidebar.warning(f"⚠️ {file.name}: doesn't look like a Cash Operations export.")
                     continue
             else:  # slip
-                if is_per_user_csv(raw):
+                if is_game_user_slip_csv(raw) or is_per_user_csv(raw):
                     # cashier detail for the comparison
                     outcomes.append(save_slip_rows_to_neon(raw, file_date, file.name))
                     # AND the existing GGR/Deposits summary dashboard
