@@ -379,41 +379,195 @@ def build_comparison_workbook(tables: dict, meta: str) -> bytes:
     return buf.getvalue()
 
 
-def build_branch_by_branch_workbook(per_branch_tables: dict, meta: str) -> bytes:
-    """Branch-by-branch workbook: one sheet per branch, each holding that branch's
-    games and cashiers for the quarter.
+def build_branch_by_branch_workbook(per_branch_tables: dict, meta: str,
+                                    cover=None) -> bytes:
+    """Branch-by-branch workbook: a rich cover page plus one sheet per branch.
 
     per_branch_tables: {branch_name: {table_name: DataFrame, ...}, ...}
-    Sheet order per branch: Games betslips, Games GWM, Cashier betslips, Cashier GWM.
+    cover (optional): {
+        'branch_summary': DataFrame with columns
+             Branch, Betslips, Paid In, Paid Out, Gross Win Margin %, Net Win Margin %
+        'games_per_branch': DataFrame with columns
+             Branch, Game, Paid In, Paid Out
+    }
     """
     wb = Workbook()
     wb.remove(wb.active)
 
-    # A short overview sheet listing the branches covered.
-    ov = wb.create_sheet(title="Overview")
+    ov = wb.create_sheet(title="Cover")
     ov.sheet_view.showGridLines = False
-    ov.merge_cells("A1:E2")
+    ov.merge_cells("A1:H2")
     ov["A1"] = "PLAYBET"
-    ov["A1"].font = Font(name="Arial", size=24, bold=True, color=WHITE)
+    ov["A1"].font = Font(name="Arial", size=26, bold=True, color=WHITE)
     ov["A1"].fill = FILL_NAVY
     ov["A1"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    for r in (1, 2):
-        for c in range(1, 6):
-            ov.cell(row=r, column=c).fill = FILL_NAVY
-    ov.row_dimensions[1].height = 24
-    ov.merge_cells("A3:E3")
-    ov["A3"] = "Branch-by-Branch Performance Analysis"
-    ov["A3"].font = Font(name="Arial", size=14, bold=True, color=SLATE)
-    ov.merge_cells("A4:E4")
+    for rr in (1, 2):
+        for c in range(1, 9):
+            ov.cell(row=rr, column=c).fill = FILL_NAVY
+    ov.row_dimensions[1].height = 26
+    ov.merge_cells("A3:H3")
+    ov["A3"] = "Branch Performance"
+    ov["A3"].font = Font(name="Arial", size=15, bold=True, color=SLATE)
+    ov.merge_cells("A4:H4")
     ov["A4"] = meta
     ov["A4"].font = F_SUBHEAD
-    ov["A6"] = "Branches in this workbook:"
-    ov["A6"].font = F_BOLD
-    r = 7
-    for b in per_branch_tables.keys():
-        ov.cell(row=r, column=1, value=f"•  {b}").font = F_BASE
-        r += 1
-    ov.column_dimensions["A"].width = 40
+    for w, col in zip([20, 16, 16, 16, 16, 16, 16, 16], "ABCDEFGH"):
+        ov.column_dimensions[col].width = w
+
+    row = 6
+    if cover and cover.get("branch_summary") is not None and not cover["branch_summary"].empty:
+        bs = cover["branch_summary"].set_index("Branch")
+
+        # Fixed pairings requested: Malvern vs Randburg, Potchefstroom vs Pretoria,
+        # White River on its own.
+        pairings = [("Malvern", "Randburg"),
+                    ("Potchefstroom", "Pretoria"),
+                    ("White River", None)]
+        metrics = ["Betslips", "Paid In", "Paid Out",
+                   "Gross Win Margin %", "Net Win Margin %"]
+
+        def _fmt(metric, val):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return "—"
+            if "%" in metric:
+                return f"{val:,.2f}%"
+            if metric in ("Paid In", "Paid Out"):
+                return f"R {val:,.0f}"
+            return f"{val:,.0f}"
+
+        for left, right in pairings:
+            have_left = left in bs.index
+            have_right = right in bs.index if right else False
+            if not have_left and not have_right:
+                continue
+            title = f"{left}  vs  {right}" if right else f"{left}"
+            ov.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+            tcell = ov.cell(row=row, column=1, value=title)
+            tcell.font = Font(name="Arial", size=12, bold=True, color=WHITE)
+            for c in range(1, 5):
+                ov.cell(row=row, column=c).fill = FILL_NAVY
+            row += 1
+
+            # header
+            ov.cell(row=row, column=1, value="Metric").font = F_BOLD
+            ov.cell(row=row, column=2, value=left).font = F_BOLD
+            if right:
+                ov.cell(row=row, column=3, value=right).font = F_BOLD
+                ov.cell(row=row, column=4, value="Leader").font = F_BOLD
+            for c in range(1, 5 if right else 3):
+                ov.cell(row=row, column=c).fill = FILL_HEAD
+                ov.cell(row=row, column=c).font = Font(name="Arial", size=10, bold=True, color=WHITE)
+            row += 1
+
+            for m in metrics:
+                lv = bs.loc[left, m] if have_left and m in bs.columns else None
+                ov.cell(row=row, column=1, value=m).font = F_BASE
+                ov.cell(row=row, column=2, value=_fmt(m, lv)).font = F_BASE
+                if right:
+                    rv = bs.loc[right, m] if have_right and m in bs.columns else None
+                    ov.cell(row=row, column=3, value=_fmt(m, rv)).font = F_BASE
+                    # leader (higher is better for all these metrics)
+                    leader = ""
+                    if lv is not None and rv is not None and not pd.isna(lv) and not pd.isna(rv):
+                        if lv > rv:
+                            leader = left
+                            ov.cell(row=row, column=2).fill = PatternFill("solid", fgColor="16A34A")
+                            ov.cell(row=row, column=2).font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+                        elif rv > lv:
+                            leader = right
+                            ov.cell(row=row, column=3).fill = PatternFill("solid", fgColor="16A34A")
+                            ov.cell(row=row, column=3).font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+                    ov.cell(row=row, column=4, value=leader).font = F_BASE
+                for c in range(1, 5 if right else 3):
+                    ov.cell(row=row, column=c).border = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+                row += 1
+            row += 1  # gap between pairings
+
+    # Game-by-game per branch: PAIRED side-by-side comparison (Option C).
+    # Malvern vs Randburg, Potchefstroom vs Pretoria, White River on its own.
+    # Each game is a row; the two branches' Paid In / Paid Out sit side by side.
+    if cover and cover.get("games_per_branch") is not None and not cover["games_per_branch"].empty:
+        gpb = cover["games_per_branch"].copy()
+        gpb["Paid Out"] = gpb["Paid Out"].abs()
+        present = set(gpb["Branch"])
+        row += 1
+        ov.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
+        h = ov.cell(row=row, column=1, value="Game-by-Game Comparison — Paid In vs Paid Out")
+        h.font = Font(name="Arial", size=13, bold=True, color=SLATE)
+        row += 2
+
+        pairings = [("Malvern", "Randburg"),
+                    ("Potchefstroom", "Pretoria"),
+                    ("White River", None)]
+
+        def _games_map(branch):
+            sub = gpb[gpb["Branch"] == branch]
+            return {r["Game"]: (float(r["Paid In"]), float(r["Paid Out"])) for _, r in sub.iterrows()}
+
+        for left, right in pairings:
+            if left not in present and (right is None or right not in present):
+                continue
+            lmap = _games_map(left)
+            rmap = _games_map(right) if right else {}
+            games = sorted(set(lmap) | set(rmap),
+                           key=lambda g: lmap.get(g, (0, 0))[0], reverse=True)
+            if not games:
+                continue
+
+            ncol = 5 if right else 3
+            # Title band
+            ov.merge_cells(start_row=row, start_column=1, end_row=row, end_column=ncol)
+            title = f"{left}  vs  {right}" if right else left
+            tc = ov.cell(row=row, column=1, value=title)
+            tc.font = Font(name="Arial", size=12, bold=True, color="FFFFFF")
+            for c in range(1, ncol + 1):
+                ov.cell(row=row, column=c).fill = FILL_NAVY
+            row += 1
+
+            # Group header row: branch names spanning their two columns
+            ov.cell(row=row, column=1, value="").fill = FILL_HEAD
+            ov.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
+            gc = ov.cell(row=row, column=2, value=left)
+            gc.fill = FILL_HEAD; gc.font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+            gc.alignment = Alignment(horizontal="center")
+            ov.cell(row=row, column=3).fill = FILL_HEAD
+            if right:
+                ov.merge_cells(start_row=row, start_column=4, end_row=row, end_column=5)
+                gc2 = ov.cell(row=row, column=4, value=right)
+                gc2.fill = FILL_HEAD; gc2.font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+                gc2.alignment = Alignment(horizontal="center")
+                ov.cell(row=row, column=5).fill = FILL_HEAD
+            ov.cell(row=row, column=1).fill = FILL_HEAD
+            row += 1
+
+            # Column header row
+            heads = ["Game", "Paid In", "Paid Out"] + (["Paid In", "Paid Out"] if right else [])
+            for j, lab in enumerate(heads, start=1):
+                cell = ov.cell(row=row, column=j, value=lab)
+                cell.fill = FILL_HEAD
+                cell.font = Font(name="Arial", size=9, bold=True, color="FFFFFF")
+            row += 1
+
+            for g in games:
+                lpi, lpo = lmap.get(g, (0.0, 0.0))
+                ov.cell(row=row, column=1, value=g).font = F_BASE
+                ov.cell(row=row, column=2, value=round(lpi, 0)).font = F_BASE
+                ov.cell(row=row, column=3, value=round(lpo, 0)).font = F_BASE
+                if right:
+                    rpi, rpo = rmap.get(g, (0.0, 0.0))
+                    ov.cell(row=row, column=4, value=round(rpi, 0)).font = F_BASE
+                    ov.cell(row=row, column=5, value=round(rpo, 0)).font = F_BASE
+                    # highlight the branch with higher Paid In for this game
+                    if lpi != rpi:
+                        winner_col = 2 if lpi > rpi else 4
+                        ov.cell(row=row, column=winner_col).fill = PatternFill("solid", fgColor="16A34A")
+                        ov.cell(row=row, column=winner_col).font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+                for c in range(2, ncol + 1):
+                    ov.cell(row=row, column=c).number_format = 'R #,##0'
+                for c in range(1, ncol + 1):
+                    ov.cell(row=row, column=c).border = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+                row += 1
+            row += 1
 
     # Sheet name suffixes per table (kept short so branch+suffix fits 31 chars).
     order = [
@@ -444,7 +598,16 @@ def build_branch_by_branch_workbook(per_branch_tables: dict, meta: str) -> bytes
                 n += 1
             ws = wb.create_sheet(title=tab)
             _banner(ws, len(df.columns), f"{branch} — {titles.get(key, key)}", meta)
-            mcols = [c for c in MONTH_NAMES if c in df.columns] if "Betslip" in key else []
+            # Columns to highlight highest-green/lowest-red per row:
+            #  - Betslip tables: the bare month columns (January, February, ...)
+            #  - GWM% tables: the monthly "... % January" columns, but NOT the Quarter column
+            if "Betslip" in key:
+                mcols = [c for c in MONTH_NAMES if c in df.columns]
+            elif "GWM" in key:
+                mcols = [c for c in df.columns
+                         if any(m in str(c) for m in MONTH_NAMES) and "Quarter" not in str(c)]
+            else:
+                mcols = []
             _write_table(ws, df, start_row=4, total_row=("Betslip" in key),
                          month_cols=mcols)
 
