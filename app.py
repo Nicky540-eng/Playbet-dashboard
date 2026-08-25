@@ -1705,8 +1705,44 @@ if df_parts:
                         }
 
                     safe = f"{comp_year} {comp_quarter}".replace(" ", "_").replace("(", "").replace(")", "").replace("–", "-").replace("/", "-")
+
+                    # Cover-page data: branch head-to-head summary + game-by-game per branch.
+                    cover = None
+                    try:
+                        cover_summary_rows = []
+                        for b in ["Malvern", "Randburg", "Potchefstroom", "Pretoria", "White River"]:
+                            gb = game_q[game_q["Shop"] == b] if game_q is not None and not game_q.empty else None
+                            sb = slip_q[slip_q["Shop"] == b] if slip_q is not None and not slip_q.empty else None
+                            if (gb is None or gb.empty) and (sb is None or sb.empty):
+                                continue
+                            bets = int(sb["BetSlips"].sum()) if sb is not None and not sb.empty else (
+                                int(gb["BetSlips"].sum()) if gb is not None and not gb.empty else 0)
+                            paid_in = float(sb["PaidIn"].sum()) if sb is not None and not sb.empty else (
+                                float(gb["PaidIn"].sum()) if gb is not None and not gb.empty else 0.0)
+                            paid_out = float(sb["PaidOut"].sum()) if sb is not None and not sb.empty else (
+                                float(gb["PaidOut"].sum()) if gb is not None and not gb.empty else 0.0)
+                            gwm = (float(gb["GrossWin"].sum()) / paid_in * 100) if (gb is not None and not gb.empty and paid_in) else 0.0
+                            nwm = ((sb["NetWin"].sum() / paid_in * 100) if (sb is not None and not sb.empty and "NetWin" in sb.columns and paid_in) else 0.0)
+                            cover_summary_rows.append({
+                                "Branch": b, "Betslips": bets, "Paid In": paid_in,
+                                "Paid Out": paid_out, "Gross Win Margin %": round(gwm, 2),
+                                "Net Win Margin %": round(float(nwm), 2)})
+                        branch_summary = pd.DataFrame(cover_summary_rows)
+
+                        gpb_rows = []
+                        if game_q is not None and not game_q.empty:
+                            g = (game_q.groupby(["Shop", "Game"], as_index=False)
+                                        .agg(**{"Paid In": ("PaidIn", "sum"),
+                                                "Paid Out": ("PaidOut", "sum")}))
+                            g = g.rename(columns={"Shop": "Branch"})
+                            gpb_rows = g.sort_values(["Branch", "Paid In"], ascending=[True, False])
+                        cover = {"branch_summary": branch_summary,
+                                 "games_per_branch": gpb_rows if len(gpb_rows) else pd.DataFrame()}
+                    except Exception:
+                        cover = None
+
                     branch_xlsx = build_branch_by_branch_workbook(
-                        per_branch_tables, f"{comp_year} {comp_quarter}")
+                        per_branch_tables, f"{comp_year} {comp_quarter}", cover=cover)
                     st.download_button(
                         "Download branch-by-branch performance (Excel)",
                         data=branch_xlsx,
