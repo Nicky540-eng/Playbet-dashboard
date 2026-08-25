@@ -1116,38 +1116,11 @@ def load_uploaded_csvs_from_folder():
             df = pd.read_csv(file_path)
             df.columns = [str(c).strip() for c in df.columns]
 
-            # ACCURATE detailed Slip Summary (Game + User + GW Margin %): feeds the
-            # graph with Deposits (Paid In) and GGR reconstructed as Gross Win
-            # (Paid In × GW Margin %), so 2026 stays on the same Gross Win basis as
-            # 2024/2025 and matches the official report.
+            # The detailed Slip Summary (Game + User + GW Margin %) feeds the
+            # COMPARISON only, not this graph. The GGR/Deposits graph stays on the
+            # Cash Operations total (full revenue: all products), so it is skipped
+            # here to avoid mixing the betslip subset into the total-revenue graph.
             if is_game_user_slip_csv(df):
-                sub = df.copy()
-                sub['Shop'] = sub[_col(sub, 'shop')].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
-                sub = sub[sub['Shop'].isin(BRANCHES)]
-                if sub.empty:
-                    continue
-                pin = _col(sub, 'paid in'); gwm = _col(sub, 'gw margin %')
-                po = _col(sub, 'paid out'); gcol = _col(sub, 'game')
-                sub['_dep'] = sub[pin].apply(clean_currency_string) if pin else 0.0
-                sub['_gwm'] = sub[gwm].apply(clean_currency_string) if gwm else 0.0
-                sub['_po'] = sub[po].apply(clean_currency_string) if po else 0.0
-                sub['_ggr'] = sub['_dep'] * sub['_gwm'] / 100.0  # reconstruct Gross Win
-                grouped = sub.groupby(['Shop', gcol], as_index=False).agg(
-                    Deposits=('_dep', 'sum'), GGR=('_ggr', 'sum'),
-                    **{'Paid Out Sum': ('_po', 'sum')})
-                grouped = grouped.rename(columns={gcol: 'Game'})
-                grouped['Game'] = grouped['Game'].apply(clean_game_name)
-                grouped['GW Margin %'] = 0.0
-                grouped['Net Win'] = grouped['GGR']
-                grouped['Net Win Margin'] = 0.0
-                grouped['Year'] = str(file_date.year)
-                grouped['Month'] = file_date.strftime('%B')
-                grouped['MonthNum'] = file_date.month
-                df_clean = enforce_schema(grouped)
-                if df_clean is not None:
-                    df_clean['_src'] = 'slip_detail'
-                    all_data.append(df_clean)
-                    file_count += 1
                 continue
 
             # Cash Operations exports are per game×cashier. Aggregate to one row per
@@ -1229,24 +1202,7 @@ def load_uploaded_csvs_from_folder():
         except Exception as e:
             st.warning(f"⚠️ Could not load {file_path}: {str(e)}")
     if all_data:
-        # Tag any frame lacking _src as non-slip (cash-ops / other), then for any
-        # Year+Month that has detailed-slip data, drop the non-slip rows so the graph
-        # never counts a month twice and always prefers the accurate slip source.
-        for d in all_data:
-            if '_src' not in d.columns:
-                d['_src'] = 'other'
-        combined = pd.concat(all_data, ignore_index=True)
-        slip_months = set(
-            zip(combined.loc[combined['_src'] == 'slip_detail', 'Year'].astype(str),
-                combined.loc[combined['_src'] == 'slip_detail', 'Month'].astype(str))
-        )
-        if slip_months:
-            drop_mask = combined.apply(
-                lambda r: r['_src'] != 'slip_detail'
-                and (str(r['Year']), str(r['Month'])) in slip_months, axis=1)
-            combined = combined[~drop_mask]
-        combined = combined.drop(columns=['_src'], errors='ignore')
-        return combined, file_count
+        return pd.concat(all_data, ignore_index=True), file_count
     return pd.DataFrame(), 0
 
 
