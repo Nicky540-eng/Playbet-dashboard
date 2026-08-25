@@ -472,6 +472,69 @@ def save_game_rows_to_neon(df, file_date, source_file):
         return "error"
 
 
+def save_game_rows_from_slip_to_neon(df, file_date, source_file):
+    """From a detailed per-cashier×per-game Slip Summary, aggregate per game and save
+    to dashboard_game_rows so the Games comparison fills. Gross win is reconstructed
+    as Paid In × GW Margin %. Returns 'saved'|'duplicate'|'error'."""
+    if _engine is None or df is None or df.empty:
+        return "error"
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    shop_c = _col(df, 'shop'); game_c = _col(df, 'game')
+    slips_c = _col(df, 'bet slips', 'betslips')
+    pin_c = _col(df, 'paid in'); pout_c = _col(df, 'paid out')
+    gw_c = _col(df, 'gw margin %', 'gw margin')
+    if not (shop_c and game_c and slips_c):
+        return "error"
+
+    year = str(file_date.year); month = file_date.strftime('%B'); monthnum = file_date.month
+
+    w = df.copy()
+    w['_shop'] = w[shop_c].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
+    w = w[w['_shop'].isin(BRANCHES)]
+    w['_slips'] = w[slips_c].apply(clean_currency_string)
+    w['_pin'] = w[pin_c].apply(clean_currency_string) if pin_c else 0.0
+    w['_pout'] = w[pout_c].apply(clean_currency_string) if pout_c else 0.0
+    w['_gwabs'] = w['_pin'] * (w[gw_c].apply(clean_currency_string) if gw_c else 0.0) / 100.0
+    w['_game'] = w[game_c].apply(clean_game_name)
+    agg = w.groupby(['_shop', '_game'], as_index=False).agg(
+        slips=('_slips', 'sum'), pin=('_pin', 'sum'),
+        pout=('_pout', 'sum'), gw=('_gwabs', 'sum'))
+    rows = [{"shop": r['_shop'], "game": r['_game'], "pinc": int(r['slips']),
+             "pins": float(r['pin']), "poutc": 0, "pouts": float(r['pout']),
+             "gw": float(r['gw'])} for _, r in agg.iterrows()]
+    if not rows:
+        return "error"
+
+    sig = hashlib.md5(("GAMEFROMSLIP|" + year + month + "|" + "|".join(
+        sorted(f"{x['shop']}:{x['game']}:{x['pinc']}" for x in rows)
+    )).encode()).hexdigest()
+    try:
+        with _engine.begin() as c:
+            exists = c.execute(text(
+                "SELECT 1 FROM dashboard_upload_hashes WHERE content_hash = :h"), {"h": sig}).fetchone()
+            if exists:
+                return "duplicate"
+            c.execute(text("DELETE FROM dashboard_game_rows WHERE year=:y AND month=:m"),
+                      {"y": year, "m": month})
+            for x in rows:
+                c.execute(text("""
+                    INSERT INTO dashboard_game_rows
+                      (source_file, shop, game, paid_in_count, paid_in_sum,
+                       paid_out_count, paid_out_sum, gross_win, year, month, monthnum)
+                    VALUES (:f,:shop,:game,:pinc,:pins,:poutc,:pouts,:gw,:y,:m,:mn)
+                """), {"f": source_file, "shop": x["shop"], "game": x["game"],
+                       "pinc": x["pinc"], "pins": x["pins"], "poutc": x["poutc"],
+                       "pouts": x["pouts"], "gw": x["gw"], "y": year, "m": month, "mn": monthnum})
+            c.execute(text("""INSERT INTO dashboard_upload_hashes (content_hash, source_file)
+                              VALUES (:h,:f) ON CONFLICT (content_hash) DO NOTHING"""),
+                      {"h": sig, "f": source_file})
+        return "saved"
+    except Exception as e:
+        st.sidebar.warning(f"Could not save game rows from slip: {e}")
+        return "error"
+
+
 def load_slip_rows_from_neon():
     if _engine is None:
         return pd.DataFrame()
@@ -1294,6 +1357,10 @@ def _process_uploads(files, kind):
                 if is_game_user_slip_csv(raw) or is_per_user_csv(raw):
                     # cashier detail for the comparison
                     outcomes.append(save_slip_rows_to_neon(raw, file_date, file.name))
+                    # detailed slip files also carry per-game detail -> save it so the
+                    # Games tab fills too (not just Cashiers)
+                    if is_game_user_slip_csv(raw):
+                        outcomes.append(save_game_rows_from_slip_to_neon(raw, file_date, file.name))
                     # AND the existing GGR/Deposits summary dashboard
                     try:
                         file.seek(0)
