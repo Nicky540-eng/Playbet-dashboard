@@ -1232,11 +1232,34 @@ def load_uploaded_csvs_from_folder():
             df = pd.read_csv(file_path)
             df.columns = [str(c).strip() for c in df.columns]
 
-            # The detailed Slip Summary (Game + User + GW Margin %) feeds the
-            # COMPARISON only, not this graph. The GGR/Deposits graph stays on the
-            # Cash Operations total (full revenue: all products), so it is skipped
-            # here to avoid mixing the betslip subset into the total-revenue graph.
+            # Detailed per-cashier×per-game Slip Summary: aggregate to ONE row per
+            # branch. GGR = reconstructed Gross Win (Paid In × GW Margin %),
+            # Deposits = Paid In. Verified against the official report (May: 15.38%).
             if is_game_user_slip_csv(df):
+                sub = df.copy()
+                sub['Shop'] = sub[_col(sub, 'shop')].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
+                sub = sub[sub['Shop'].isin(BRANCHES)]
+                if sub.empty:
+                    continue
+                pin = _col(sub, 'paid in'); gwm = _col(sub, 'gw margin %'); po = _col(sub, 'paid out')
+                sub['_dep'] = sub[pin].apply(clean_currency_string) if pin else 0.0
+                sub['_gwm'] = sub[gwm].apply(clean_currency_string) if gwm else 0.0
+                sub['_po'] = sub[po].apply(clean_currency_string) if po else 0.0
+                sub['_ggr'] = sub['_dep'] * sub['_gwm'] / 100.0
+                grouped = sub.groupby('Shop', as_index=False).agg(
+                    Deposits=('_dep', 'sum'), GGR=('_ggr', 'sum'),
+                    **{'Paid Out Sum': ('_po', 'sum')})
+                grouped['Game'] = 'All Games'
+                grouped['GW Margin %'] = 0.0
+                grouped['Net Win'] = grouped['GGR']
+                grouped['Net Win Margin'] = 0.0
+                grouped['Year'] = str(file_date.year)
+                grouped['Month'] = file_date.strftime('%B')
+                grouped['MonthNum'] = file_date.month
+                df_clean = enforce_schema(grouped)
+                if df_clean is not None:
+                    all_data.append(df_clean)
+                    file_count += 1
                 continue
 
             # Cash Operations exports are per game×cashier. Aggregate to one row per
