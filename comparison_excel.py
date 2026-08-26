@@ -394,7 +394,7 @@ def build_branch_by_branch_workbook(per_branch_tables: dict, meta: str,
     wb = Workbook()
     wb.remove(wb.active)
 
-    ov = wb.create_sheet(title="Cover")
+    ov = wb.create_sheet(title="Review")
     ov.sheet_view.showGridLines = False
     ov.merge_cells("A1:H2")
     ov["A1"] = "PLAYBET"
