@@ -1115,6 +1115,33 @@ def load_data(uploaded_files):
                         all_data.append(df_clean)
                     continue
 
+                # Detailed per-cashier×per-game Slip Summary: aggregate to ONE row per
+                # branch, with GGR = reconstructed Gross Win (Paid In × GW Margin %)
+                # and Deposits = Paid In. Prevents raw rows / wrong GGR reaching the graph.
+                if is_game_user_slip_csv(df) and file_date is not None:
+                    w = df.copy()
+                    w['Shop'] = w[_col(w, 'shop')].astype(str).str.strip().replace({'Potch': 'Potchefstroom'})
+                    w = w[w['Shop'].isin(BRANCHES)]
+                    pin = _col(w, 'paid in'); gwm = _col(w, 'gw margin %'); po = _col(w, 'paid out')
+                    w['_dep'] = w[pin].apply(clean_currency_string) if pin else 0.0
+                    w['_gwm'] = w[gwm].apply(clean_currency_string) if gwm else 0.0
+                    w['_po'] = w[po].apply(clean_currency_string) if po else 0.0
+                    w['_ggr'] = w['_dep'] * w['_gwm'] / 100.0
+                    grouped = w.groupby('Shop', as_index=False).agg(
+                        Deposits=('_dep', 'sum'), GGR=('_ggr', 'sum'),
+                        **{'Paid Out Sum': ('_po', 'sum')})
+                    grouped['Game'] = 'All Games'
+                    grouped['GW Margin %'] = 0.0
+                    grouped['Net Win'] = grouped['GGR']
+                    grouped['Net Win Margin'] = 0.0
+                    grouped['Year'] = str(file_date.year)
+                    grouped['Month'] = file_date.strftime('%B')
+                    grouped['MonthNum'] = file_date.month
+                    df_clean = enforce_schema(grouped)
+                    if df_clean is not None:
+                        all_data.append(df_clean)
+                    continue
+
                 deposit_col = find_deposit_column(df)
                 if deposit_col:
                     df = df.rename(columns={deposit_col: 'Deposits'})
@@ -1411,6 +1438,26 @@ with st.sidebar.expander("🧹 Maintenance"):
         st.cache_data.clear()
         st.success("Cache cleared — re-reading all files.")
         st.rerun()
+
+    if st.button("Fix 2026 GGR — clear & rebuild from slip files"):
+        # Removes all 2026 rows from the graph table AND the comparison detail tables,
+        # plus their upload hashes, so you can re-upload the detailed slip files cleanly.
+        # After clicking, re-upload each 2026 slip file in the Slip Summary box.
+        if _engine is None:
+            st.error("No database connection.")
+        else:
+            try:
+                with _engine.begin() as c:
+                    c.execute(text("DELETE FROM dashboard_uploaded_rows WHERE year='2026'"))
+                    c.execute(text("DELETE FROM dashboard_slip_rows WHERE year='2026'"))
+                    c.execute(text("DELETE FROM dashboard_game_rows WHERE year='2026'"))
+                    c.execute(text("DELETE FROM dashboard_upload_hashes"))
+                st.cache_data.clear()
+                st.success("Cleared all 2026 data. Now re-upload each 2026 Slip Summary file "
+                           "in the Slip Summary box — they'll rebuild correctly.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not clear 2026 data: {e}")
 
     if st.button("Backfill missing months into comparison"):
         # For any 2026 month that has a branch-level GGR summary in
