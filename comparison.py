@@ -44,8 +44,9 @@ def _month_cols(months):
 # ---------------------------------------------------------------------------
 
 def games_betslip_h2h(game_df, quarter_label):
-    """Betslip count per game, one column per month of the quarter, with a
-    quarter total and each game's best and worst month flagged."""
+    """Betslip count per game, one column per month of the quarter, with a quarter
+    total, each game's best and worst month, plus Paid In and Paid Out for the
+    quarter — betslip counts alone don't show value, so the money sits beside them."""
     if game_df is None or game_df.empty:
         return pd.DataFrame()
     months = QUARTERS[quarter_label]
@@ -66,6 +67,17 @@ def games_betslip_h2h(game_df, quarter_label):
 
     piv["Best Month"] = piv.apply(_best, axis=1)
     piv["Worst Month"] = piv.apply(_worst, axis=1)
+
+    # Money for the quarter, per game — Paid In, Paid Out and what was kept.
+    scoped = game_df[game_df["MonthNum"].isin(months)]
+    money = scoped.groupby("Game").agg(**{
+        "Paid In": ("PaidIn", "sum"),
+        "Paid Out": ("PaidOut", "sum"),
+    })
+    money["Paid Out"] = money["Paid Out"].abs()
+    money["Net (kept)"] = money["Paid In"] - money["Paid Out"]
+    piv = piv.join(money).fillna({"Paid In": 0.0, "Paid Out": 0.0, "Net (kept)": 0.0})
+
     piv.index.name = "Game"
     return piv.sort_values("Quarter Total", ascending=False).reset_index()
 
@@ -146,6 +158,16 @@ def cashier_betslip_h2h(slip_df, quarter_label):
 
     piv["Best Month"] = piv.apply(_best, axis=1)
     piv["Worst Month"] = piv.apply(_worst, axis=1)
+
+    # Money for the quarter, per cashier — betslip counts alone don't show value.
+    scoped = slip_df[slip_df["MonthNum"].isin(months)]
+    money = scoped.groupby(["Cashier", "Shop"]).agg(**{
+        "Paid In": ("PaidIn", "sum"),
+        "Paid Out": ("PaidOut", "sum"),
+    })
+    money["Paid Out"] = money["Paid Out"].abs()
+    money["Net (kept)"] = money["Paid In"] - money["Paid Out"]
+    piv = piv.join(money).fillna({"Paid In": 0.0, "Paid Out": 0.0, "Net (kept)": 0.0})
 
     out = piv.reset_index().rename(columns={"Shop": "Branch"})
     return out.sort_values("Quarter Total", ascending=False)
